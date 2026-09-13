@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head><title>Test Stream A</title></head>
+  <body style="margin:0;background:#000">
+    <canvas id="c" width="640" height="360"></canvas>
+    <script>
+      const ctx = document.getElementById("c").getContext("2d");
+      let hue = 0;
+      function draw() {
+        hue = (hue + 2) % 360;
+        ctx.fillStyle = `hsl(${hue},80%,50%)`;
+        ctx.fillRect(0, 0, 640, 360);
+        ctx.fillStyle = "#fff";
+        ctx.font = "40px sans-serif";
+        ctx.fillText(new Date().toISOString(), 20, 180);
+        requestAnimationFrame(draw);
+      }
+      draw();
+
+      // Produce actual (very quiet) audio so the captured audio track carries signal.
+      const audioCtx = new AudioContext();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.001;
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      document.addEventListener("click", () => audioCtx.resume());
+      audioCtx.resume();
+    </script>
+  </body>
+</html>

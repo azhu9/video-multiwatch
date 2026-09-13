@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head><title>Test Stream B</title></head>
+  <body style="margin:0;background:#000">
+    <canvas id="c" width="640" height="360"></canvas>
+    <script>
+      const ctx = document.getElementById("c").getContext("2d");
+      let hue = 180;
+      function draw() {
+        hue = (hue + 2) % 360;
+        ctx.fillStyle = `hsl(${hue},80%,30%)`;
+        ctx.fillRect(0, 0, 640, 360);
+        ctx.fillStyle = "#fff";
+        ctx.font = "40px sans-serif";
+        ctx.fillText("STREAM B " + new Date().toISOString(), 20, 180);
+        requestAnimationFrame(draw);
+      }
+      draw();
+      const audioCtx = new AudioContext();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.001;
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      audioCtx.resume();
+    </script>
+  </body>
+</html>

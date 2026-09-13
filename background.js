@@ -66,11 +66,26 @@ async function openOrFocusViewer() {
   await chrome.tabs.create({ url: VIEWER_URL });
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
+// chrome.tabCapture only works on a tab the extension has been "invoked" on
+// (activeTab-style grant) — either the toolbar action or this context menu
+// item, both clicked while that tab is focused. There is no way to grant
+// this for an arbitrary already-open tab without one of these gestures.
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "track-tab",
+    title: "Track this tab in Multiwatch",
+    contexts: ["page"],
+  });
+});
+
+async function trackAndOpenViewer(tab) {
   if (tab.url === VIEWER_URL) return;
   await addTrackedTab(tab.id);
   await openOrFocusViewer();
-});
+}
+
+chrome.action.onClicked.addListener(trackAndOpenViewer);
+chrome.contextMenus.onClicked.addListener((_info, tab) => trackAndOpenViewer(tab));
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const state = await getState();
@@ -94,15 +109,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case "SET_HOT":
         sendResponse(await setHotTab(message.tabId));
         break;
-      case "LIST_OPEN_TABS": {
-        const tabs = await chrome.tabs.query({});
-        sendResponse(
-          tabs
-            .filter((t) => t.url !== VIEWER_URL)
-            .map((t) => ({ id: t.id, title: t.title, favIconUrl: t.favIconUrl, url: t.url }))
-        );
-        break;
-      }
       default:
         sendResponse(null);
     }

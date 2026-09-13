@@ -9,10 +9,6 @@ const COLD_CONSTRAINTS = { width: 320, height: 180, frameRate: 8 };
 
 const mainStage = document.getElementById("main-stage");
 const thumbStrip = document.getElementById("thumb-strip");
-const addTabBtn = document.getElementById("add-tab-btn");
-const picker = document.getElementById("add-tab-picker");
-const pickerList = document.getElementById("picker-list");
-const pickerClose = document.getElementById("picker-close");
 
 // tabId -> { tab, wrapper, video, stream|null }
 const entries = new Map();
@@ -177,28 +173,5 @@ chrome.runtime.onMessage.addListener((message) => {
     reconcile(message.state);
   }
 });
-
-addTabBtn.addEventListener("click", async () => {
-  const openTabs = await sendMessage({ type: "LIST_OPEN_TABS" });
-  pickerList.innerHTML = "";
-  for (const tab of openTabs) {
-    const li = document.createElement("li");
-    const favicon = document.createElement("img");
-    favicon.src = tab.favIconUrl || "";
-    favicon.onerror = () => (favicon.style.visibility = "hidden");
-    const title = document.createElement("span");
-    title.className = "title";
-    title.textContent = tab.title || tab.url;
-    li.append(favicon, title);
-    li.addEventListener("click", async () => {
-      await sendMessage({ type: "ADD_TAB", tabId: tab.id });
-      picker.classList.add("hidden");
-    });
-    pickerList.appendChild(li);
-  }
-  picker.classList.remove("hidden");
-});
-
-pickerClose.addEventListener("click", () => picker.classList.add("hidden"));
 
 refreshFromBackground();

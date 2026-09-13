@@ -26,16 +26,39 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
 
 1. Open `chrome://extensions`, enable **Developer mode**.
 2. **Load unpacked** → select this repo's folder.
-3. Open a tab you want to track (e.g. a live stream), then click the
-   Multiwatch toolbar icon — this tracks that tab and opens/focuses the
-   viewer tab.
-4. In the viewer tab, click **"+ Add tracked tab"** to track additional
-   already-open tabs from a picker.
-5. Each newly tracked tab shows a **"Start capture"** overlay — click it
-   once per tab. This is required: `chrome.tabCapture` only allows starting
-   capture on a tab as the direct result of a user gesture, so it can't be
-   done automatically on load.
-6. Click any thumbnail to swap it into the main slot.
+3. For each stream you want to track: switch to that tab, then either click
+   the Multiwatch toolbar icon or right-click the page and choose
+   **"Track this tab in Multiwatch."** This opens/focuses the viewer tab and
+   adds the tab to it.
+   - This step matters more than it looks: `chrome.tabCapture` will only
+     capture a tab the extension has been "invoked" on via one of these two
+     gestures (this is `activeTab`-style, Chrome-enforced, and not
+     something the extension can work around — there's no way to
+     batch-track a list of already-open tabs you never explicitly invoked
+     the extension on).
+4. Each newly tracked tab shows a **"Start capture"** overlay in the viewer
+   — click it once per tab to begin the actual `tabCapture` stream.
+5. Click any thumbnail to swap it into the main slot.
+
+## Testing
+
+`test/smoke.mjs` is a Playwright-driven regression test for the tab-tracking
+and click-to-swap DOM mechanics (tile rendering, mute-flag flipping,
+promotion/demotion). Run it with:
+
+```sh
+npm install
+npm test
+```
+
+It intentionally can't verify a real `chrome.tabCapture` success end-to-end
+— that requires an actual user gesture on real browser UI (the toolbar icon
+or the context-menu item), which no automated test can produce. It confirms
+that path fails with the expected permission error rather than crashing, and
+separately verifies the swap mechanics by attaching a fake local
+`canvas.captureStream()` stream through the same code path real captures
+use. Loading the extension in a real browser and clicking through the flow
+above is still required to confirm real capture actually works end to end.
 
 ## Known limitations / not yet built
 
@@ -56,12 +79,26 @@ later:
 
 ## Status
 
-This is freshly scaffolded and has **not yet been run against a live
-Chrome browser** in this environment — there was no way to load an unpacked
-extension and exercise real `chrome.tabCapture` against a live video tab
-here. Load it per the steps above and check the extension's service worker
-console and the viewer tab's DevTools console for errors; the most likely
+This has been run and smoke-tested against a real Chromium instance
+(headed, via Playwright) in this environment, which caught and fixed a real
+bug: an earlier version let you add any already-open tab to track from a
+picker inside the viewer, but `chrome.tabCapture` silently refuses to
+capture a tab the extension was never "invoked" on — so that picker could
+never have worked. It's been replaced with the toolbar-icon/context-menu
+flow described above, which is what actually satisfies Chrome's per-tab
+capture grant.
+
+What's confirmed working: the extension loads cleanly under Manifest V3,
+tab tracking/removal and the click-to-swap DOM/mute mechanics all behave
+correctly (see `test/smoke.mjs`).
+
+What's still unverified, because it requires a real user click on real
+browser UI that no automated test here can produce: that the
+toolbar-icon/context-menu invocation actually grants `tabCapture` access
+end-to-end, and the actual video quality/smoothness of the resulting
+stream. Load it per the steps above and check both the extension's service
+worker console (`chrome://extensions` → Multiwatch → "service worker") and
+the viewer tab's DevTools console for errors. The most likely remaining
 rough edges are the exact `getUserMedia` constraint shape for
 `chromeMediaSource: "tab"` and whether `applyConstraints` is honored
-mid-stream by tab-capture tracks (both are called out in `SPEC.md` as
-worth prototyping early).
+mid-stream by tab-capture tracks.
