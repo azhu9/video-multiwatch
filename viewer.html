@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Multiwatch</title>
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <h1>Multiwatch</h1>
+      <button id="add-tab-btn">+ Add tracked tab</button>
+    </header>
+
+    <div id="add-tab-picker" class="picker hidden">
+      <div class="picker-inner">
+        <div class="picker-header">
+          <span>Pick a tab to track</span>
+          <button id="picker-close">✕</button>
+        </div>
+        <ul id="picker-list"></ul>
+      </div>
+    </div>
+
+    <main id="main-stage"></main>
+    <section id="thumb-strip"></section>
+
+    <script src="viewer.js"></script>
+  </body>
+</html>
