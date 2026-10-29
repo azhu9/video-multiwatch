@@ -21,6 +21,19 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   Swapping which tab is hot just flips those constraints/mute flags and
   moves the existing `<video>` element in the DOM — no stream is torn down
   or restarted, so swaps are instant.
+- **Live vs. VOD playback**: each tile has a **LIVE/VOD** badge (click to
+  toggle). VOD tabs get their actual source-tab `<video>` paused when
+  demoted to a thumbnail and resumed when promoted back — so an on-demand
+  video doesn't keep playing (and getting ahead of where you left off)
+  while you're not watching it. LIVE tabs are left alone and keep running
+  in the background regardless of hot/cold state, since the point is to
+  not miss anything live. This is auto-detected on first capture (a
+  finite `video.duration` implies VOD, `Infinity`/`NaN` implies live) but
+  defaults to LIVE when undetectable, and can always be corrected with the
+  badge. Implemented via `chrome.scripting.executeScript` calling
+  `.play()`/`.pause()` on the tracked tab's own `<video>` element(s) —
+  distinct from the muting used for audio control, since muting doesn't
+  stop playback progress.
 
 ## Loading it (unpacked, for personal use)
 
@@ -89,8 +102,13 @@ flow described above, which is what actually satisfies Chrome's per-tab
 capture grant.
 
 What's confirmed working: the extension loads cleanly under Manifest V3,
-tab tracking/removal and the click-to-swap DOM/mute mechanics all behave
-correctly (see `test/smoke.mjs`).
+tab tracking/removal, the click-to-swap DOM/mute mechanics, and the
+LIVE/VOD pause-on-demote logic all behave correctly (see `test/smoke.mjs`).
+The latter is verified by stubbing `chrome.scripting.executeScript` to
+record calls, since it hits the same real-gesture permission wall as
+`tabCapture` in an automated harness — so it confirms *our* decision logic
+(when we choose to pause/resume), not that Chrome will actually grant the
+script injection end-to-end.
 
 What's still unverified, because it requires a real user click on real
 browser UI that no automated test here can produce: that the

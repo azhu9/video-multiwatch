@@ -101,6 +101,23 @@ body {
   text-overflow: ellipsis;
 }
 
+.tile .live-badge {
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 5px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.tile .live-badge.vod {
+  background: #4a4a4a;
+}
+
 .tile .remove-btn {
   background: rgba(0, 0, 0, 0.6);
   border: none;

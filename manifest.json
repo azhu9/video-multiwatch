@@ -3,7 +3,7 @@
   "name": "Multiwatch",
   "version": "0.1.0",
   "description": "Track multiple live video tabs, watch one with audio, swap between them.",
-  "permissions": ["tabs", "tabCapture", "activeTab", "storage", "contextMenus"],
+  "permissions": ["tabs", "tabCapture", "activeTab", "storage", "contextMenus", "scripting"],
   "background": {
     "service_worker": "background.js",
     "type": "module"

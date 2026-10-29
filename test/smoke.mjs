@@ -146,8 +146,63 @@ async function main() {
 
   console.log("Tile/swap mechanics: PASS");
 
+  // --- Live/VOD pause-on-demote behavior ---
+  // chrome.scripting.executeScript would hit the same real-gesture permission
+  // wall as tabCapture in this harness, so stub it to record calls and verify
+  // *our* call logic (when we decide to pause/resume) independently of
+  // whether Chrome would actually grant it in a real browser.
+  await viewer.evaluate(() => {
+    window.__scriptingCalls = [];
+    chrome.scripting.executeScript = async (opts) => {
+      window.__scriptingCalls.push({ tabId: opts.target.tabId, shouldPlay: opts.args?.[0] });
+      return [];
+    };
+  });
+  const getCalls = () => viewer.evaluate(() => window.__scriptingCalls);
+  const clearCalls = () => viewer.evaluate(() => (window.__scriptingCalls = []));
+
+  // thumbTabId is currently hot (promoted above). Mark it VOD via its badge —
+  // since it's hot, that should immediately send a "play" call.
+  await viewer.locator("#main-stage .live-badge").click();
+  await viewer.waitForTimeout(200);
+  let calls = await getCalls();
+  assert(
+    calls.some((c) => c.tabId === Number(thumbTabId) && c.shouldPlay === true),
+    "marking the hot tile as VOD should sync it to playing"
+  );
+
+  // Promote the other (still-LIVE) tile, demoting our VOD tile — expect a pause.
+  await clearCalls();
+  const otherTile = viewer.locator(`.tile[data-tab-id="${other.tabId}"]`);
+  await otherTile.click();
+  await viewer.waitForTimeout(300);
+  calls = await getCalls();
+  assert(
+    calls.some((c) => c.tabId === Number(thumbTabId) && c.shouldPlay === false),
+    "demoting a VOD tile should pause it"
+  );
+  assert(
+    !calls.some((c) => c.tabId === Number(other.tabId)),
+    "a tile still marked LIVE should never receive play/pause calls"
+  );
+
+  // Swap back — expect the VOD tile to resume.
+  await clearCalls();
+  await viewer.locator(`.tile[data-tab-id="${thumbTabId}"]`).click();
+  await viewer.waitForTimeout(300);
+  calls = await getCalls();
+  assert(
+    calls.some((c) => c.tabId === Number(thumbTabId) && c.shouldPlay === true),
+    "promoting a VOD tile back to main should resume it"
+  );
+
+  console.log("Live/VOD pause-on-demote mechanics: PASS");
+
   const unexpectedErrors = errors.filter(
-    (e) => !e.includes("tabCapture failed") && !e.includes("404 (Not Found)")
+    (e) =>
+      !e.includes("tabCapture failed") &&
+      !e.includes("404 (Not Found)") &&
+      !e.includes("live detection failed") // same no-real-gesture limitation as tabCapture
   );
   if (unexpectedErrors.length > 0) {
     console.log("Unexpected console/page errors:");

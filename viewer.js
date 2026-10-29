@@ -10,7 +10,9 @@ const COLD_CONSTRAINTS = { width: 320, height: 180, frameRate: 8 };
 const mainStage = document.getElementById("main-stage");
 const thumbStrip = document.getElementById("thumb-strip");
 
-// tabId -> { tab, wrapper, video, stream|null }
+// tabId -> { tab, wrapper, video, startOverlay, liveBadge, stream|null,
+//            isLive: null (unknown) | true (live, never paused) | false (VOD,
+//            paused while demoted), appliedHot: last hot/cold state we acted on }
 const entries = new Map();
 let hotTabId = null;
 
@@ -44,7 +46,17 @@ function buildTile(tab) {
     e.stopPropagation();
     untrackTab(tab.id);
   });
-  label.append(favicon, title, removeBtn);
+  const liveBadge = document.createElement("button");
+  liveBadge.className = "live-badge";
+  liveBadge.title = "Click to mark as Live (never paused) or VOD (paused while not in the main slot)";
+  liveBadge.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const entry = entries.get(tab.id);
+    entry.isLive = entry.isLive === false ? true : false;
+    updateLiveBadge(entry);
+    syncPlayback(tab.id);
+  });
+  label.append(favicon, title, liveBadge, removeBtn);
   wrapper.appendChild(label);
 
   const startOverlay = document.createElement("div");
@@ -64,7 +76,61 @@ function buildTile(tab) {
     if (entry?.stream) promoteToHot(tab.id);
   });
 
-  return { wrapper, video, startOverlay };
+  return { wrapper, video, startOverlay, liveBadge };
+}
+
+function updateLiveBadge(entry) {
+  if (entry.isLive === false) {
+    entry.liveBadge.textContent = "VOD";
+    entry.liveBadge.classList.add("vod");
+  } else {
+    entry.liveBadge.textContent = "LIVE";
+    entry.liveBadge.classList.remove("vod");
+  }
+}
+
+// VOD tabs get paused while demoted and resumed when promoted, since you can
+// pick up a recording where you left off. Live tabs are left alone — they
+// keep running in the background regardless of hot/cold state, since the
+// whole point is to not miss anything live.
+function setTabPlayback(tabId, shouldPlay) {
+  chrome.scripting
+    .executeScript({
+      target: { tabId, allFrames: true },
+      func: (play) => {
+        document.querySelectorAll("video").forEach((v) => (play ? v.play().catch(() => {}) : v.pause()));
+      },
+      args: [shouldPlay],
+    })
+    .catch((err) => console.error("setTabPlayback failed", err));
+}
+
+function syncPlayback(tabId) {
+  const entry = entries.get(tabId);
+  if (!entry || entry.isLive !== false) return;
+  setTabPlayback(tabId, entry.appliedHot === true);
+}
+
+// Heuristic: an on-demand video reports a finite duration; a live stream
+// typically reports Infinity/NaN. Defaults to "live" (never auto-paused)
+// when undetectable, since that's the safer failure mode for this app's
+// primary use case. The live-badge toggle lets the user correct it either way.
+async function detectLive(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        const v = document.querySelector("video");
+        if (!v) return null;
+        return !Number.isFinite(v.duration) || v.duration <= 0;
+      },
+    });
+    const hit = results.find((r) => r.result !== null && r.result !== undefined);
+    return hit ? hit.result : true;
+  } catch (err) {
+    console.error("live detection failed", err);
+    return true;
+  }
 }
 
 function startCapture(tabId) {
@@ -83,7 +149,7 @@ function startCapture(tabId) {
   });
 }
 
-function attachStream(tabId, stream) {
+async function attachStream(tabId, stream) {
   const entry = entries.get(tabId);
   if (!entry) {
     stream.getTracks().forEach((t) => t.stop());
@@ -93,6 +159,10 @@ function attachStream(tabId, stream) {
   entry.video.srcObject = stream;
   entry.startOverlay.classList.add("hidden");
   applyHotness();
+
+  entry.isLive = await detectLive(tabId);
+  updateLiveBadge(entry);
+  syncPlayback(tabId);
 }
 
 function untrackTab(tabId) {
@@ -113,6 +183,9 @@ function promoteToHot(tabId) {
 function applyHotness() {
   for (const [tabId, entry] of entries) {
     const isHot = tabId === hotTabId;
+    const changed = entry.appliedHot !== isHot;
+    entry.appliedHot = isHot;
+
     entry.video.muted = !isHot;
     (isHot ? mainStage : thumbStrip).appendChild(entry.wrapper);
 
@@ -122,6 +195,8 @@ function applyHotness() {
         // Best-effort — some tab sources ignore constraint changes mid-stream.
       });
     }
+
+    if (changed) syncPlayback(tabId);
   }
   renderEmptyState();
 }
@@ -132,7 +207,8 @@ function renderEmptyState() {
   if (!hasAny && !empty) {
     empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "No tracked tabs yet — click \"Add tracked tab\" to get started.";
+    empty.textContent =
+      'No tracked tabs yet — switch to a tab and click the toolbar icon, or right-click it and choose "Track this tab in Multiwatch."';
     mainStage.appendChild(empty);
   } else if (hasAny && empty) {
     empty.remove();
@@ -155,8 +231,19 @@ async function reconcile(state) {
   // Add tiles for newly tracked tabs.
   for (const tab of state.trackedTabs) {
     if (entries.has(tab.id)) continue;
-    const { wrapper, video, startOverlay } = buildTile(tab);
-    entries.set(tab.id, { tab, wrapper, video, startOverlay, stream: null });
+    const { wrapper, video, startOverlay, liveBadge } = buildTile(tab);
+    const entry = {
+      tab,
+      wrapper,
+      video,
+      startOverlay,
+      liveBadge,
+      stream: null,
+      isLive: null,
+      appliedHot: undefined,
+    };
+    entries.set(tab.id, entry);
+    updateLiveBadge(entry);
     (tab.id === hotTabId ? mainStage : thumbStrip).appendChild(wrapper);
   }
 
