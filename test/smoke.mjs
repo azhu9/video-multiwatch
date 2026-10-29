@@ -198,6 +198,42 @@ async function main() {
 
   console.log("Live/VOD pause-on-demote mechanics: PASS");
 
+  // --- Manual play/pause button, and that a manual pause survives a swap ---
+  await clearCalls();
+  await viewer.locator("#main-stage .play-pause-btn").click();
+  await viewer.waitForTimeout(200);
+  calls = await getCalls();
+  assert(
+    calls.some((c) => c.tabId === Number(thumbTabId) && c.shouldPlay === false),
+    "clicking pause in the main view should pause the VOD source"
+  );
+  const paused = await viewer.evaluate(() => document.querySelector("#main-stage video").paused);
+  assert(paused === true, "local video element should reflect the manual pause");
+
+  // Swap away and back — the manual pause should NOT be auto-resumed.
+  await clearCalls();
+  await otherTile.click();
+  await viewer.waitForTimeout(300);
+  await viewer.locator(`.tile[data-tab-id="${thumbTabId}"]`).click();
+  await viewer.waitForTimeout(300);
+  calls = await getCalls();
+  assert(
+    !calls.some((c) => c.tabId === Number(thumbTabId) && c.shouldPlay === true),
+    "a manual pause should survive being swapped away and back"
+  );
+
+  // The play button explicitly resumes it.
+  await clearCalls();
+  await viewer.locator("#main-stage .play-pause-btn").click();
+  await viewer.waitForTimeout(200);
+  calls = await getCalls();
+  assert(
+    calls.some((c) => c.tabId === Number(thumbTabId) && c.shouldPlay === true),
+    "clicking play in the main view should resume the VOD source"
+  );
+
+  console.log("Manual pause/resume mechanics: PASS");
+
   const unexpectedErrors = errors.filter(
     (e) =>
       !e.includes("tabCapture failed") &&

@@ -12,7 +12,9 @@ const thumbStrip = document.getElementById("thumb-strip");
 
 // tabId -> { tab, wrapper, video, startOverlay, liveBadge, stream|null,
 //            isLive: null (unknown) | true (live, never paused) | false (VOD,
-//            paused while demoted), appliedHot: last hot/cold state we acted on }
+//            paused while demoted), appliedHot: last hot/cold state we acted
+//            on, userPaused: true once the user hits pause themselves, so an
+//            auto-promote doesn't silently override it }
 const entries = new Map();
 let hotTabId = null;
 
@@ -57,7 +59,48 @@ function buildTile(tab) {
     syncPlayback(tab.id);
   });
   label.append(favicon, title, liveBadge, removeBtn);
-  wrapper.appendChild(label);
+
+  // Only shown/usable on the main (hot) tile — CSS hides this on thumbnails.
+  const mainControls = document.createElement("div");
+  mainControls.className = "main-controls";
+
+  const playPauseBtn = document.createElement("button");
+  playPauseBtn.className = "play-pause-btn";
+  playPauseBtn.textContent = "⏸";
+  playPauseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePlayPause(tab.id);
+  });
+  video.addEventListener("play", () => (playPauseBtn.textContent = "⏸"));
+  video.addEventListener("pause", () => (playPauseBtn.textContent = "▶"));
+
+  const volumeSlider = document.createElement("input");
+  volumeSlider.type = "range";
+  volumeSlider.className = "volume-slider";
+  volumeSlider.min = "0";
+  volumeSlider.max = "1";
+  volumeSlider.step = "0.01";
+  volumeSlider.value = "1";
+  volumeSlider.addEventListener("click", (e) => e.stopPropagation());
+  volumeSlider.addEventListener("input", (e) => {
+    video.volume = Number(e.target.value);
+  });
+
+  const fullscreenBtn = document.createElement("button");
+  fullscreenBtn.className = "fullscreen-btn";
+  fullscreenBtn.textContent = "⛶";
+  fullscreenBtn.title = "Fullscreen just this video";
+  fullscreenBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    video.requestFullscreen().catch((err) => console.error("requestFullscreen failed", err));
+  });
+
+  mainControls.append(playPauseBtn, volumeSlider, fullscreenBtn);
+
+  const overlayBottom = document.createElement("div");
+  overlayBottom.className = "overlay-bottom";
+  overlayBottom.append(mainControls, label);
+  wrapper.appendChild(overlayBottom);
 
   const startOverlay = document.createElement("div");
   startOverlay.className = "start-overlay";
@@ -77,6 +120,23 @@ function buildTile(tab) {
   });
 
   return { wrapper, video, startOverlay, liveBadge };
+}
+
+// Pausing a VOD tile also pauses its real source tab (so playback position
+// doesn't keep advancing); pausing a live tile only freezes the local view —
+// the source is never touched, matching the never-pause-live policy.
+function togglePlayPause(tabId) {
+  const entry = entries.get(tabId);
+  if (!entry) return;
+  if (entry.video.paused) {
+    entry.userPaused = false;
+    entry.video.play().catch(() => {});
+    if (entry.isLive === false) setTabPlayback(tabId, true);
+  } else {
+    entry.userPaused = true;
+    entry.video.pause();
+    if (entry.isLive === false) setTabPlayback(tabId, false);
+  }
 }
 
 function updateLiveBadge(entry) {
@@ -108,7 +168,11 @@ function setTabPlayback(tabId, shouldPlay) {
 function syncPlayback(tabId) {
   const entry = entries.get(tabId);
   if (!entry || entry.isLive !== false) return;
-  setTabPlayback(tabId, entry.appliedHot === true);
+  // Demoting always pauses; promoting only resumes if the user didn't
+  // explicitly pause it themselves (a manual pause survives a swap away
+  // and back, rather than being silently overridden).
+  const shouldPlay = entry.appliedHot === true && !entry.userPaused;
+  setTabPlayback(tabId, shouldPlay);
 }
 
 // Heuristic: an on-demand video reports a finite duration; a live stream
@@ -189,6 +253,15 @@ function applyHotness() {
     entry.video.muted = !isHot;
     (isHot ? mainStage : thumbStrip).appendChild(entry.wrapper);
 
+    // Flipping .muted doesn't reliably resume playback under Chrome's
+    // autoplay policy — an explicit .play() made synchronously within the
+    // user's click is what actually works. Skip it if the user explicitly
+    // paused this tile themselves (see syncPlayback for the source-tab side
+    // of that same rule).
+    if (isHot && changed && !entry.userPaused) {
+      entry.video.play().catch(() => {});
+    }
+
     if (entry.stream) {
       const track = entry.stream.getVideoTracks()[0];
       track?.applyConstraints(isHot ? HOT_CONSTRAINTS : COLD_CONSTRAINTS).catch(() => {
@@ -241,6 +314,7 @@ async function reconcile(state) {
       stream: null,
       isLive: null,
       appliedHot: undefined,
+      userPaused: false,
     };
     entries.set(tab.id, entry);
     updateLiveBadge(entry);

@@ -34,6 +34,16 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   `.play()`/`.pause()` on the tracked tab's own `<video>` element(s) —
   distinct from the muting used for audio control, since muting doesn't
   stop playback progress.
+- **Main-view controls**: the main (hot) tile has a play/pause button, a
+  volume slider, and a fullscreen button — hidden on thumbnails. Play/pause
+  on a VOD tile also pauses/resumes its real source tab (same mechanism as
+  the auto pause-on-demote above); on a live tile it only freezes/resumes
+  your local view, since the source is never touched. A manual pause
+  survives being swapped away and back — it's not silently overridden by
+  the auto-resume-on-promote behavior. Fullscreen calls
+  `video.requestFullscreen()` on the `<video>` element itself rather than
+  the page, so it shows just the media (scaled/letterboxed to fit), not the
+  rest of the viewer UI.
 
 ## Loading it (unpacked, for personal use)
 
