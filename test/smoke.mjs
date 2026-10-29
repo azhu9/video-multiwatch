@@ -249,7 +249,8 @@ async function main() {
     (e) =>
       !e.includes("tabCapture failed") &&
       !e.includes("404 (Not Found)") &&
-      !e.includes("live detection failed") // same no-real-gesture limitation as tabCapture
+      !e.includes("live detection failed") && // same no-real-gesture limitation as tabCapture
+      !e.includes("disablePiPOnTab failed") // ditto
   );
   if (unexpectedErrors.length > 0) {
     console.log("Unexpected console/page errors:");

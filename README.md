@@ -57,11 +57,16 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   play/pause/volume/fullscreen bar is hover-revealed (hidden until you
   hover the video) to keep it out of the way, including of an overlaid
   thumbnail strip.
-- **No Picture-in-Picture**: every `<video>` sets `disablePictureInPicture`,
-  which suppresses both the manual PiP entry point and Chrome's automatic
-  on-tab-hide PiP. This was also the likely cause of an earlier reported
-  "tab switches away for no reason" — a backgrounded tab with a playing,
-  PiP-eligible video is exactly what triggers Chrome's automatic PiP.
+- **No Picture-in-Picture, on either side.** Our own viewer `<video>`
+  elements set `disablePictureInPicture`. Separately, a tracked site's
+  *own* player can auto-engage PiP on its source tab once it detects it
+  isn't focused (which it never is here, by design) — some players treat a
+  backgrounded tab as "user stepped away, offer PiP as a courtesy."
+  `disablePiPOnTab()` neutralizes that directly on the tracked tab: it
+  disables PiP on every `<video>` there (including ones created later, via
+  a `MutationObserver`, since some players swap/recreate their video
+  element) and force-exits anything that still manages to enter PiP. Runs
+  once per tab right after capture starts.
 - **Capture starts automatically**: as soon as a tab is tracked, it starts
   capturing immediately — there's no more per-tile "Start capture" click.
   This relies on the toolbar/context-menu click that tracked the tab having

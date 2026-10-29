@@ -200,6 +200,53 @@ function syncPlayback(tabId) {
   setTabPlayback(tabId, shouldPlay);
 }
 
+// Twitch (and likely other players) can auto-engage Picture-in-Picture on
+// its own when it detects its tab isn't focused — which is always true here,
+// since we deliberately never focus a tracked tab. This neutralizes it on
+// the tracked tab itself: disables PiP on every <video> (including ones
+// created later, e.g. on an ad/quality transition, via the observer) and
+// force-exits anything that still manages to enter it. Run once per tab
+// right after capture starts; the injected guard persists for that tab's
+// page lifetime since it sets up its own observer/listener.
+function disablePiPOnTab(tabId) {
+  chrome.scripting
+    .executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        if (window.__multiwatchPiPGuardInstalled) return;
+        window.__multiwatchPiPGuardInstalled = true;
+
+        const guard = (v) => {
+          try {
+            v.disablePictureInPicture = true;
+          } catch {}
+        };
+        document.querySelectorAll("video").forEach(guard);
+
+        new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            for (const node of m.addedNodes) {
+              if (node.nodeName === "VIDEO") guard(node);
+              else if (node.querySelectorAll) node.querySelectorAll("video").forEach(guard);
+            }
+          }
+        }).observe(document.documentElement, { childList: true, subtree: true });
+
+        document.addEventListener(
+          "enterpictureinpicture",
+          () => {
+            document.exitPictureInPicture().catch(() => {});
+          },
+          true
+        );
+        if (document.pictureInPictureElement) {
+          document.exitPictureInPicture().catch(() => {});
+        }
+      },
+    })
+    .catch((err) => console.error("disablePiPOnTab failed", err));
+}
+
 // Heuristic: an on-demand video reports a finite duration; a live stream
 // typically reports Infinity/NaN. Defaults to "live" (never auto-paused)
 // when undetectable, since that's the safer failure mode for this app's
@@ -265,6 +312,7 @@ async function attachStream(tabId, stream) {
   entry.connectingOverlay.classList.add("hidden");
   applyHotness();
 
+  disablePiPOnTab(tabId);
   entry.isLive = await detectLive(tabId);
   updateLiveBadge(entry);
   syncPlayback(tabId);
