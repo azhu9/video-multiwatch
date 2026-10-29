@@ -44,6 +44,20 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   `video.requestFullscreen()` on the `<video>` element itself rather than
   the page, so it shows just the media (scaled/letterboxed to fit), not the
   rest of the viewer UI.
+- **No Picture-in-Picture**: every `<video>` sets `disablePictureInPicture`,
+  which suppresses both the manual PiP entry point and Chrome's automatic
+  on-tab-hide PiP. This was also the likely cause of an earlier reported
+  "tab switches away for no reason" — a backgrounded tab with a playing,
+  PiP-eligible video is exactly what triggers Chrome's automatic PiP.
+- **Capture starts automatically**: as soon as a tab is tracked, it starts
+  capturing immediately — there's no more per-tile "Start capture" click.
+  This relies on the toolbar/context-menu click that tracked the tab having
+  already granted `tabCapture`'s per-tab authorization (which persists
+  until that tab navigates), so no fresh gesture should be needed for the
+  capture call itself. Each tile shows a "Connecting…" overlay until its
+  stream attaches; clicking it manually retries, which doubles as a
+  fallback gesture-backed trigger if the automatic attempt ever hits a
+  permission wall the toolbar click didn't already clear.
 
 ## Loading it (unpacked, for personal use)
 
@@ -59,8 +73,8 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
      something the extension can work around — there's no way to
      batch-track a list of already-open tabs you never explicitly invoked
      the extension on).
-4. Each newly tracked tab shows a **"Start capture"** overlay in the viewer
-   — click it once per tab to begin the actual `tabCapture` stream.
+4. Each newly tracked tab starts capturing automatically — you'll see a
+   brief "Connecting…" overlay until its stream attaches.
 5. Click any thumbnail to swap it into the main slot.
 
 ## Testing
@@ -126,7 +140,14 @@ toolbar-icon/context-menu invocation actually grants `tabCapture` access
 end-to-end, and the actual video quality/smoothness of the resulting
 stream. Load it per the steps above and check both the extension's service
 worker console (`chrome://extensions` → Multiwatch → "service worker") and
-the viewer tab's DevTools console for errors. The most likely remaining
-rough edges are the exact `getUserMedia` constraint shape for
-`chromeMediaSource: "tab"` and whether `applyConstraints` is honored
-mid-stream by tab-capture tracks.
+the viewer tab's DevTools console for errors.
+
+One specific thing worth watching for after this change: capture now starts
+automatically rather than from a button click, on the assumption that
+`tabCapture`'s per-tab grant (established by the earlier toolbar/
+context-menu click) persists without needing a *fresh* gesture for the
+`getMediaStreamId` call itself. If that assumption is wrong for some reason,
+tiles will sit on "Connecting…" and the service worker/viewer console will
+show the same `tabCapture failed` error as before — in that case, clicking
+the "Connecting…" overlay manually retries with a real click, which should
+still work as a fallback.

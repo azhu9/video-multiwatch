@@ -162,23 +162,16 @@ body {
   padding: 0 4px;
 }
 
-.tile .start-overlay {
+.tile .connecting-overlay {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.7);
-}
-
-.tile .start-overlay button {
-  background: #4a90e2;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 14px;
-  cursor: pointer;
+  color: #ccc;
   font-size: 13px;
+  cursor: pointer;
 }
 
 .hidden {

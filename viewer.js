@@ -10,10 +10,11 @@ const COLD_CONSTRAINTS = { width: 320, height: 180, frameRate: 8 };
 const mainStage = document.getElementById("main-stage");
 const thumbStrip = document.getElementById("thumb-strip");
 
-// tabId -> { tab, wrapper, video, startOverlay, liveBadge, stream|null,
-//            isLive: null (unknown) | true (live, never paused) | false (VOD,
-//            paused while demoted), appliedHot: last hot/cold state we acted
-//            on, userPaused: true once the user hits pause themselves, so an
+// tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, stream|null,
+//            capturing: a startCapture() call is in flight, isLive: null
+//            (unknown) | true (live, never paused) | false (VOD, paused
+//            while demoted), appliedHot: last hot/cold state we acted on,
+//            userPaused: true once the user hits pause themselves, so an
 //            auto-promote doesn't silently override it }
 const entries = new Map();
 let hotTabId = null;
@@ -30,6 +31,7 @@ function buildTile(tab) {
   const video = document.createElement("video");
   video.autoplay = true;
   video.playsInline = true;
+  video.disablePictureInPicture = true; // no PiP, including Chrome's automatic on-hide PiP
   wrapper.appendChild(video);
 
   const label = document.createElement("div");
@@ -102,24 +104,25 @@ function buildTile(tab) {
   overlayBottom.append(mainControls, label);
   wrapper.appendChild(overlayBottom);
 
-  const startOverlay = document.createElement("div");
-  startOverlay.className = "start-overlay";
-  const startBtn = document.createElement("button");
-  startBtn.textContent = "Start capture";
-  startBtn.addEventListener("click", (e) => {
+  // Capture starts automatically (see reconcile()) — this is just a status
+  // overlay while that's in flight, and doubles as a manual retry if it
+  // failed (e.g. hit the same gesture/permission requirement tabCapture
+  // enforces — see startCapture()).
+  const connectingOverlay = document.createElement("div");
+  connectingOverlay.className = "connecting-overlay";
+  connectingOverlay.textContent = "Connecting…";
+  connectingOverlay.addEventListener("click", (e) => {
     e.stopPropagation();
-    startCapture(tab.id); // called synchronously from the click handler —
-    // tabCapture.getMediaStreamId requires an active user gesture.
+    startCapture(tab.id);
   });
-  startOverlay.appendChild(startBtn);
-  wrapper.appendChild(startOverlay);
+  wrapper.appendChild(connectingOverlay);
 
   wrapper.addEventListener("click", () => {
     const entry = entries.get(tab.id);
     if (entry?.stream) promoteToHot(tab.id);
   });
 
-  return { wrapper, video, startOverlay, liveBadge };
+  return { wrapper, video, connectingOverlay, liveBadge };
 }
 
 // Pausing a VOD tile also pauses its real source tab (so playback position
@@ -197,10 +200,22 @@ async function detectLive(tabId) {
   }
 }
 
+// Starts automatically as soon as a tab is tracked (see reconcile()) rather
+// than waiting for a per-tile click — the earlier toolbar/context-menu click
+// that tracked the tab already granted tabCapture's per-tab authorization,
+// and that grant persists until the tab navigates, so no fresh gesture is
+// needed here. If that assumption turns out wrong for some tab, the
+// connecting-overlay click handler above provides a manual, gesture-backed
+// retry as a fallback.
 function startCapture(tabId) {
+  const entry = entries.get(tabId);
+  if (!entry || entry.stream || entry.capturing) return;
+  entry.capturing = true;
+
   chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
     if (chrome.runtime.lastError || !streamId) {
       console.error("tabCapture failed", chrome.runtime.lastError);
+      entry.capturing = false;
       return;
     }
     navigator.mediaDevices
@@ -209,7 +224,10 @@ function startCapture(tabId) {
         video: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
       })
       .then((stream) => attachStream(tabId, stream))
-      .catch((err) => console.error("getUserMedia failed", err));
+      .catch((err) => {
+        console.error("getUserMedia failed", err);
+        entry.capturing = false;
+      });
   });
 }
 
@@ -220,8 +238,9 @@ async function attachStream(tabId, stream) {
     return;
   }
   entry.stream = stream;
+  entry.capturing = false;
   entry.video.srcObject = stream;
-  entry.startOverlay.classList.add("hidden");
+  entry.connectingOverlay.classList.add("hidden");
   applyHotness();
 
   entry.isLive = await detectLive(tabId);
@@ -301,17 +320,19 @@ async function reconcile(state) {
     }
   }
 
-  // Add tiles for newly tracked tabs.
+  // Add tiles for newly tracked tabs, and start capturing immediately so
+  // media is already live by the time you click a thumbnail to swap to it.
   for (const tab of state.trackedTabs) {
     if (entries.has(tab.id)) continue;
-    const { wrapper, video, startOverlay, liveBadge } = buildTile(tab);
+    const { wrapper, video, connectingOverlay, liveBadge } = buildTile(tab);
     const entry = {
       tab,
       wrapper,
       video,
-      startOverlay,
+      connectingOverlay,
       liveBadge,
       stream: null,
+      capturing: false,
       isLive: null,
       appliedHot: undefined,
       userPaused: false,
@@ -319,6 +340,7 @@ async function reconcile(state) {
     entries.set(tab.id, entry);
     updateLiveBadge(entry);
     (tab.id === hotTabId ? mainStage : thumbStrip).appendChild(wrapper);
+    startCapture(tab.id);
   }
 
   applyHotness();

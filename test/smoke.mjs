@@ -101,16 +101,14 @@ async function main() {
   const tileCount = await viewer.locator(".tile").count();
   assert(tileCount === 2, `expected 2 tiles, got ${tileCount}`);
 
-  const startButtons = viewer.locator(".start-overlay button");
-  const startCount = await startButtons.count();
-  assert(startCount === 2, `expected 2 start-capture buttons, got ${startCount}`);
-  // Real tabCapture can't succeed here (no genuine user gesture on browser
-  // chrome), but clicking should still fail cleanly via the expected
-  // permission error rather than throwing/crashing the page.
-  for (let i = 0; i < startCount; i++) {
-    await startButtons.nth(i).click();
-    await viewer.waitForTimeout(500);
-  }
+  // Capture now starts automatically as soon as a tab is tracked (no more
+  // per-tile "Start capture" button) — give those in-flight attempts a
+  // moment. Real tabCapture can't succeed here (no genuine user gesture on
+  // browser chrome), but it should fail cleanly via the expected permission
+  // error rather than throwing/crashing the page.
+  await viewer.waitForTimeout(500);
+  const connectingCount = await viewer.locator(".connecting-overlay:not(.hidden)").count();
+  assert(connectingCount === 2, `expected both tiles still showing "Connecting…", got ${connectingCount}`);
 
   // Swap mechanics are independent of tabCapture succeeding, so exercise them
   // by attaching a fake local stream through the same attachStream() the real
