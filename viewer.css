@@ -11,7 +11,14 @@ body {
   font-family: system-ui, sans-serif;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 #toolbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -26,21 +33,50 @@ body {
 }
 
 #toolbar .hint {
+  flex: 1;
+  min-width: 0;
   color: #999;
   font-size: 12px;
 }
 
+#thumb-layout-control {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ccc;
+}
+
+#thumb-layout-control select {
+  background: #2a2a2a;
+  color: #eee;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 3px 4px;
+}
+
+#stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 #main-stage {
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
-  min-height: 60vh;
 }
 
 #main-stage .tile {
   width: 100%;
-  max-width: 1280px;
+  height: 100%;
 }
 
 #thumb-strip {
@@ -48,6 +84,38 @@ body {
   gap: 8px;
   padding: 8px;
   overflow-x: auto;
+  flex: 0 0 auto;
+  background: #000;
+}
+
+/* Overlay modes float the thumbnail strip over the main video's own
+   letterbox space instead of reserving a dedicated row/column — the main
+   video gets the full stage either way. Known rough edge: in
+   overlay-bottom, the floating strip can sit over the main tile's own
+   label row at the very bottom. */
+#stage.layout-overlay-bottom #thumb-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 50%);
+}
+
+#stage.layout-overlay-left #thumb-strip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.75) 60%, transparent);
+}
+
+#stage.layout-overlay-left #thumb-strip .tile {
+  width: 180px;
 }
 
 .tile {
@@ -103,6 +171,17 @@ body {
   align-items: center;
   gap: 10px;
   padding: 6px 10px 0;
+  /* Hover/focus-reveal: keeps the bottom of the video clear by default,
+     which also reduces overlap with a floating thumbnail overlay. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+#main-stage .tile:hover .main-controls,
+#main-stage .tile:focus-within .main-controls {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tile .main-controls button {

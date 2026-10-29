@@ -44,6 +44,19 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   `video.requestFullscreen()` on the `<video>` element itself rather than
   the page, so it shows just the media (scaled/letterboxed to fit), not the
   rest of the viewer UI.
+- **Layout**: the main video fills the full stage (no more hard-coded
+  `max-width`); a **Thumbnails** dropdown in the toolbar switches the
+  thumbnail strip between **Below** (its own row), **Overlay bottom**, and
+  **Overlay left** — the overlay modes float thumbnails over the main
+  video's own letterboxed black space instead of reserving dedicated
+  layout space for them, so the video gets the full stage either way. The
+  choice persists via `localStorage`. Note: with a very wide/short window
+  and 16:9 content, `object-fit: contain` will still letterbox left/right
+  no matter what — that's a consequence of preserving aspect ratio without
+  cropping, not something layout space alone can fix. The main view's own
+  play/pause/volume/fullscreen bar is hover-revealed (hidden until you
+  hover the video) to keep it out of the way, including of an overlaid
+  thumbnail strip.
 - **No Picture-in-Picture**: every `<video>` sets `disablePictureInPicture`,
   which suppresses both the manual PiP entry point and Chrome's automatic
   on-tab-hide PiP. This was also the likely cause of an earlier reported
@@ -102,6 +115,15 @@ above is still required to confirm real capture actually works end to end.
 These are called out in `SPEC.md`'s phased plan and intentionally left for
 later:
 
+- **DRM-protected content (Netflix, Disney+, Hulu, Max, Prime Video, etc.)
+  cannot be captured — this is a hard limit, not a bug.** Chrome applies an
+  output-protection flag to EME/Widevine-protected video at the
+  browser/compositor level; `tabCapture` of such a tab returns black frames
+  by design, before any extension code runs. There is no workaround at this
+  layer, and circumventing it would cross into DMCA anti-circumvention
+  territory, so this isn't something to try to route around. Twitch and
+  regular (non-Premium-exclusive) YouTube aren't DRM-protected and work
+  fine.
 - **No ad-break auto-switching yet** — that depends on the separate
   ad-detector project's `/state` API, which isn't wired in.
 - **No in-page ad-overlay blocking** — `tabCapture` captures the whole

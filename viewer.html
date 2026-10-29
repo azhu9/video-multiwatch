@@ -9,10 +9,20 @@
     <header id="toolbar">
       <h1>Multiwatch</h1>
       <span class="hint">To track a tab: switch to it, then click the Multiwatch toolbar icon or right-click the page and choose "Track this tab in Multiwatch."</span>
+      <label id="thumb-layout-control">
+        Thumbnails:
+        <select id="thumb-layout-select">
+          <option value="below">Below</option>
+          <option value="overlay-bottom">Overlay bottom</option>
+          <option value="overlay-left">Overlay left</option>
+        </select>
+      </label>
     </header>
 
-    <main id="main-stage"></main>
-    <section id="thumb-strip"></section>
+    <div id="stage">
+      <main id="main-stage"></main>
+      <section id="thumb-strip"></section>
+    </div>
 
     <script src="viewer.js"></script>
   </body>

@@ -9,6 +9,28 @@ const COLD_CONSTRAINTS = { width: 320, height: 180, frameRate: 8 };
 
 const mainStage = document.getElementById("main-stage");
 const thumbStrip = document.getElementById("thumb-strip");
+const stage = document.getElementById("stage");
+const thumbLayoutSelect = document.getElementById("thumb-layout-select");
+
+const THUMB_LAYOUT_KEY = "multiwatch:thumbLayout";
+function applyThumbLayout(mode) {
+  stage.classList.remove("layout-below", "layout-overlay-bottom", "layout-overlay-left");
+  stage.classList.add(`layout-${mode}`);
+  try {
+    localStorage.setItem(THUMB_LAYOUT_KEY, mode);
+  } catch {
+    // Private window or blocked storage — fine, just won't persist.
+  }
+}
+thumbLayoutSelect.addEventListener("change", (e) => applyThumbLayout(e.target.value));
+let savedThumbLayout = "below";
+try {
+  savedThumbLayout = localStorage.getItem(THUMB_LAYOUT_KEY) || "below";
+} catch {
+  // Ignore — default to "below".
+}
+thumbLayoutSelect.value = savedThumbLayout;
+applyThumbLayout(savedThumbLayout);
 
 // tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, stream|null,
 //            capturing: a startCapture() call is in flight, isLive: null

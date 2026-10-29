@@ -197,7 +197,11 @@ async function main() {
   console.log("Live/VOD pause-on-demote mechanics: PASS");
 
   // --- Manual play/pause button, and that a manual pause survives a swap ---
+  // main-controls is hover-revealed (opacity:0/pointer-events:none until the
+  // tile is hovered), so a real .hover() is needed before .click() will see
+  // it as interactable — exactly what a real mouse hovering the tile does.
   await clearCalls();
+  await viewer.locator("#main-stage .tile").hover();
   await viewer.locator("#main-stage .play-pause-btn").click();
   await viewer.waitForTimeout(200);
   calls = await getCalls();
@@ -222,6 +226,7 @@ async function main() {
 
   // The play button explicitly resumes it.
   await clearCalls();
+  await viewer.locator("#main-stage .tile").hover();
   await viewer.locator("#main-stage .play-pause-btn").click();
   await viewer.waitForTimeout(200);
   calls = await getCalls();
@@ -231,6 +236,14 @@ async function main() {
   );
 
   console.log("Manual pause/resume mechanics: PASS");
+
+  // --- Thumbnail layout toggle ---
+  for (const mode of ["overlay-bottom", "overlay-left", "below"]) {
+    await viewer.locator("#thumb-layout-select").selectOption(mode);
+    const hasClass = await viewer.evaluate(() => document.getElementById("stage").className);
+    assert(hasClass.includes(`layout-${mode}`), `#stage should carry layout-${mode} after selecting it`);
+  }
+  console.log("Thumbnail layout toggle: PASS");
 
   const unexpectedErrors = errors.filter(
     (e) =>
