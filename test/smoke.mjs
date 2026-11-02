@@ -275,6 +275,24 @@ async function main() {
   assert(hasSrc, "main video should still have a srcObject after resync");
   console.log("Resync button: PASS");
 
+  // --- Number-key hotkeys ---
+  // hotkeyOrder is track order, not hot/cold order: tabA (tracked first) is
+  // slot 1, tabB (tracked second, aka thumbTabId) is slot 2 — regardless of
+  // which is currently hot. A leftover focused <select> from the toggles
+  // above would make our isTypingTarget guard swallow the keypress, so
+  // explicitly blur first, matching a real user having clicked elsewhere.
+  await viewer.evaluate(() => document.activeElement?.blur());
+  await viewer.keyboard.press("1");
+  await viewer.waitForTimeout(200);
+  let mainTabId = await viewer.evaluate(() => document.querySelector("#main-stage .tile")?.dataset.tabId);
+  assert(mainTabId === other.tabId, `pressing "1" should promote the first-tracked tab (${other.tabId}), got ${mainTabId}`);
+
+  await viewer.keyboard.press("2");
+  await viewer.waitForTimeout(200);
+  mainTabId = await viewer.evaluate(() => document.querySelector("#main-stage .tile")?.dataset.tabId);
+  assert(mainTabId === thumbTabId, `pressing "2" should promote the second-tracked tab (${thumbTabId}), got ${mainTabId}`);
+  console.log("Number-key hotkeys: PASS");
+
   const unexpectedErrors = errors.filter(
     (e) =>
       !e.includes("tabCapture failed") &&

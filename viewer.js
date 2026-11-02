@@ -97,6 +97,11 @@ function buildTile(tab) {
   video.disablePictureInPicture = true; // no PiP, including Chrome's automatic on-hide PiP
   wrapper.appendChild(video);
 
+  // Set by renumberHotkeys() — shows which number key (1-9) jumps here.
+  const hotkeyBadge = document.createElement("div");
+  hotkeyBadge.className = "hotkey-badge hidden";
+  wrapper.appendChild(hotkeyBadge);
+
   const label = document.createElement("div");
   label.className = "label";
   const favicon = document.createElement("img");
@@ -194,7 +199,7 @@ function buildTile(tab) {
     if (entry?.stream) promoteToHot(tab.id);
   });
 
-  return { wrapper, video, connectingOverlay, liveBadge };
+  return { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge };
 }
 
 // Pausing a VOD tile also pauses its real source tab (so playback position
@@ -392,6 +397,7 @@ function untrackTab(tabId) {
   if (entry?.stream) entry.stream.getTracks().forEach((t) => t.stop());
   entries.delete(tabId);
   entry?.wrapper.remove();
+  renumberHotkeys();
   sendMessage({ type: "REMOVE_TAB", tabId });
 }
 
@@ -463,13 +469,14 @@ async function reconcile(state) {
   // media is already live by the time you click a thumbnail to swap to it.
   for (const tab of state.trackedTabs) {
     if (entries.has(tab.id)) continue;
-    const { wrapper, video, connectingOverlay, liveBadge } = buildTile(tab);
+    const { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge } = buildTile(tab);
     const entry = {
       tab,
       wrapper,
       video,
       connectingOverlay,
       liveBadge,
+      hotkeyBadge,
       stream: null,
       capturing: false,
       isLive: null,
@@ -482,8 +489,45 @@ async function reconcile(state) {
     startCapture(tab.id);
   }
 
+  renumberHotkeys();
   applyHotness();
 }
+
+// Assigns 1-9 to tracked tabs in track order (stable per-tab "channel
+// numbers", not tied to which one is currently hot) and labels each tile.
+// Tabs beyond the 9th simply get no hotkey — there's no 10th digit key by
+// convention here.
+const hotkeyOrder = [];
+function renumberHotkeys() {
+  hotkeyOrder.length = 0;
+  hotkeyOrder.push(...entries.keys());
+  for (const [tabId, entry] of entries) {
+    const slot = hotkeyOrder.indexOf(tabId);
+    if (slot >= 0 && slot < 9) {
+      entry.hotkeyBadge.textContent = String(slot + 1);
+      entry.hotkeyBadge.classList.remove("hidden");
+    } else {
+      entry.hotkeyBadge.classList.add("hidden");
+    }
+  }
+}
+
+function isTypingTarget(el) {
+  return el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return; // don't fight browser/OS shortcuts
+  if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
+  if (!/^[1-9]$/.test(e.key)) return;
+
+  const tabId = hotkeyOrder[Number(e.key) - 1];
+  const entry = tabId !== undefined ? entries.get(tabId) : undefined;
+  if (entry?.stream) {
+    e.preventDefault();
+    promoteToHot(tabId);
+  }
+});
 
 async function refreshFromBackground() {
   const state = await sendMessage({ type: "GET_STATE" });

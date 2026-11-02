@@ -81,6 +81,16 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   tracked tabs is the more durable fix, since the root cause is almost
   always resource contention on that specific device, not something this
   button can address at its source.
+- **Number-key hotkeys**: press `1`-`9` anywhere in the viewer to jump
+  straight to that tracked tab's slot, shown as a small number badge in
+  each tile's top-left corner. Slots are assigned by **track order**
+  (first tab tracked is always `1`, etc.) and stay stable regardless of
+  which tile is currently hot — think channel numbers, not "current
+  position in the thumbnail strip." Only works once a tile's stream has
+  attached (same "Connecting…" gate as clicking it), and is ignored while
+  a dropdown/input has focus or a modifier key (Ctrl/Alt/Cmd/Shift) is
+  held, so it doesn't fight the browser's own shortcuts. Tabs beyond the
+  9th don't get a hotkey.
 - **No Picture-in-Picture, on either side.** Our own viewer `<video>`
   elements set `disablePictureInPicture`. Separately, a tracked site's
   *own* player can auto-engage PiP on its source tab once it detects it
