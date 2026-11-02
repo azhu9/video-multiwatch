@@ -18,14 +18,19 @@ const COLD_PRESETS = {
 };
 let coldConstraints = COLD_PRESETS.low;
 
-// tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, stream|null,
-//            capturing: a startCapture() call is in flight, isLive: null
-//            (unknown) | true (live, never paused) | false (VOD, paused
-//            while demoted), appliedHot: last hot/cold state we acted on,
+// tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, hotkeyBadge,
+//            stream|null, capturing: a startCapture() call is in flight,
+//            isLive: null (unknown) | true (live, never paused) | false
+//            (VOD, paused while demoted), appliedHot/appliedShown: last
+//            audio-focus/main-stage-visibility state we acted on,
 //            userPaused: true once the user hits pause themselves, so an
 //            auto-promote doesn't silently override it }
 const entries = new Map();
-let hotTabId = null;
+let hotTabId = null; // the one tab with audio
+let splitTabId = null; // an optional second tab shown large (muted) alongside it — shift+click a thumbnail to set
+// Canonical tab order: drives hotkey numbering, DOM order, and cycling.
+// Track order by default, but user-reorderable via drag-and-drop.
+let tabOrder = [];
 
 const mainStage = document.getElementById("main-stage");
 const thumbStrip = document.getElementById("thumb-strip");
@@ -61,11 +66,13 @@ function applyThumbQuality(preset) {
   } catch {
     // Ignore — just won't persist.
   }
-  // applyHotness() only re-applies constraints when a tile's hot/cold state
-  // *changes* — a quality-setting change needs to push to every cold tile
-  // immediately regardless of whether its hot state changed.
-  for (const [tabId, entry] of entries) {
-    if (tabId === hotTabId || !entry.stream) continue;
+  // applyHotness() only re-applies constraints when a tile's shown/hidden
+  // state *changes* — a quality-setting change needs to push to every
+  // currently-cold tile immediately, regardless of whether that changed.
+  // Skips anything shown in #main-stage (hot or split), which stays at
+  // HOT_CONSTRAINTS regardless of this setting.
+  for (const [, entry] of entries) {
+    if (entry.appliedShown || !entry.stream) continue;
     entry.stream
       .getVideoTracks()[0]
       ?.applyConstraints(coldConstraints)
@@ -90,6 +97,22 @@ function buildTile(tab) {
   const wrapper = document.createElement("div");
   wrapper.className = "tile";
   wrapper.dataset.tabId = String(tab.id);
+  wrapper.draggable = true;
+  wrapper.title = "Click to switch audio to this tab. Shift+click to also show it large (split view). Drag to reorder.";
+  wrapper.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/plain", String(tab.id));
+    e.dataTransfer.effectAllowed = "move";
+  });
+  wrapper.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  });
+  wrapper.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = Number(e.dataTransfer.getData("text/plain"));
+    if (!Number.isNaN(draggedId) && draggedId !== tab.id) reorderTabs(draggedId, tab.id);
+  });
 
   const video = document.createElement("video");
   video.autoplay = true;
@@ -194,9 +217,14 @@ function buildTile(tab) {
   });
   wrapper.appendChild(connectingOverlay);
 
-  wrapper.addEventListener("click", () => {
+  wrapper.addEventListener("click", (e) => {
     const entry = entries.get(tab.id);
-    if (entry?.stream) promoteToHot(tab.id);
+    if (!entry?.stream) return;
+    if (e.shiftKey) {
+      toggleSplit(tab.id);
+    } else {
+      promoteToHot(tab.id);
+    }
   });
 
   return { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge };
@@ -267,10 +295,13 @@ function setTabPlayback(tabId, shouldPlay) {
 function syncPlayback(tabId) {
   const entry = entries.get(tabId);
   if (!entry || entry.isLive !== false) return;
-  // Demoting always pauses; promoting only resumes if the user didn't
-  // explicitly pause it themselves (a manual pause survives a swap away
-  // and back, rather than being silently overridden).
-  const shouldPlay = entry.appliedHot === true && !entry.userPaused;
+  // Based on appliedShown (hot OR split), not just hot — a VOD tile pinned
+  // to the split slot is still being watched and shouldn't auto-pause just
+  // because it isn't the audio-focused one. Demoting out of the stage
+  // entirely always pauses; being shown again only resumes if the user
+  // didn't explicitly pause it themselves (a manual pause survives a swap
+  // away and back, rather than being silently overridden).
+  const shouldPlay = entry.appliedShown === true && !entry.userPaused;
   setTabPlayback(tabId, shouldPlay);
 }
 
@@ -354,6 +385,7 @@ function startCapture(tabId) {
   const entry = entries.get(tabId);
   if (!entry || entry.stream || entry.capturing) return;
   entry.capturing = true;
+  entry.connectingOverlay.textContent = "Connecting…"; // overwrite any earlier "Capture lost" text
 
   chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
     if (chrome.runtime.lastError || !streamId) {
@@ -386,10 +418,39 @@ async function attachStream(tabId, stream) {
   entry.connectingOverlay.classList.add("hidden");
   applyHotness();
 
+  // A track can end on its own for reasons we don't control — the source
+  // tab crashing, Chrome discarding it despite autoDiscardable:false, or
+  // the tabCapture grant otherwise lapsing. Catch that generically here, in
+  // addition to the more immediate TAB_NAVIGATED signal from background.js.
+  stream.getTracks().forEach((track) => {
+    track.addEventListener("ended", () => markCaptureLost(tabId));
+  });
+
   disablePiPOnTab(tabId);
   entry.isLive = await detectLive(tabId);
   updateLiveBadge(entry);
   syncPlayback(tabId);
+}
+
+// Capture died out from under us (tab navigated, crashed, or was otherwise
+// invalidated) — tear down the dead stream and surface it rather than
+// leaving a frozen/stale frame on screen. The retry click on
+// connectingOverlay reuses startCapture(), which will work again *if* the
+// per-tab grant is still somehow intact (e.g. a discard, not a navigation);
+// for an actual navigation it won't, and the user needs to switch to that
+// tab and re-invoke the toolbar icon/context menu, same as tracking it the
+// first time.
+function markCaptureLost(tabId) {
+  const entry = entries.get(tabId);
+  if (!entry || !entry.stream) return; // already cleaned up, or never started
+  entry.stream.getTracks().forEach((t) => t.stop());
+  entry.stream = null;
+  entry.capturing = false;
+  entry.video.srcObject = null;
+  entry.connectingOverlay.textContent =
+    "Capture lost — click to retry (may need to re-track this tab if it navigated)";
+  entry.connectingOverlay.classList.remove("hidden");
+  applyHotness();
 }
 
 function untrackTab(tabId) {
@@ -397,6 +458,8 @@ function untrackTab(tabId) {
   if (entry?.stream) entry.stream.getTracks().forEach((t) => t.stop());
   entries.delete(tabId);
   entry?.wrapper.remove();
+  tabOrder = tabOrder.filter((id) => id !== tabId);
+  if (splitTabId === tabId) splitTabId = null;
   renumberHotkeys();
   sendMessage({ type: "REMOVE_TAB", tabId });
 }
@@ -408,33 +471,72 @@ function promoteToHot(tabId) {
   applyHotness();
 }
 
+// A tile already promoted to audio-focus can't also be the split partner —
+// it's already shown large, and audio focus is set via a plain click.
+function toggleSplit(tabId) {
+  if (tabId === hotTabId) return;
+  splitTabId = splitTabId === tabId ? null : tabId;
+  applyHotness();
+}
+
+// Reorders tabOrder locally for instant feedback, then tells background.js
+// so it persists and broadcasts to any other context. tabOrder (not DOM
+// position) is the source of truth both for hotkey numbering and for where
+// applyHotness() places each tile, so updating it is enough to move things.
+function reorderTabs(draggedId, targetId) {
+  const newOrder = [...tabOrder];
+  const fromIdx = newOrder.indexOf(draggedId);
+  const toIdx = newOrder.indexOf(targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  newOrder.splice(fromIdx, 1);
+  newOrder.splice(toIdx, 0, draggedId);
+  tabOrder = newOrder;
+  renumberHotkeys();
+  applyHotness();
+  sendMessage({ type: "REORDER_TABS", order: newOrder });
+}
+
 function applyHotness() {
-  for (const [tabId, entry] of entries) {
-    const isHot = tabId === hotTabId;
-    const changed = entry.appliedHot !== isHot;
+  // Iterates tabOrder (not entries' Map insertion order) so DOM placement
+  // respects reordering — appendChild on an already-attached node moves it,
+  // so walking tiles in tabOrder naturally keeps both #main-stage and
+  // #thumb-strip sorted to match.
+  for (const tabId of tabOrder) {
+    const entry = entries.get(tabId);
+    if (!entry) continue;
+
+    const isHot = tabId === hotTabId; // the one with audio
+    const isSplit = tabId === splitTabId; // optional second large-but-muted slot
+    const isShown = isHot || isSplit; // placed in #main-stage at all
+    const hotChanged = entry.appliedHot !== isHot;
+    const shownChanged = entry.appliedShown !== isShown;
     entry.appliedHot = isHot;
+    entry.appliedShown = isShown;
 
     entry.video.muted = !isHot;
-    (isHot ? mainStage : thumbStrip).appendChild(entry.wrapper);
+    entry.wrapper.classList.toggle("split-tile", isSplit);
+    (isShown ? mainStage : thumbStrip).appendChild(entry.wrapper);
 
     // Flipping .muted doesn't reliably resume playback under Chrome's
     // autoplay policy — an explicit .play() made synchronously within the
     // user's click is what actually works. Skip it if the user explicitly
     // paused this tile themselves (see syncPlayback for the source-tab side
-    // of that same rule).
-    if (isHot && changed && !entry.userPaused) {
+    // of that same rule). Gated on becoming audio-focused specifically,
+    // since a muted tile autoplays fine without this nudge.
+    if (isHot && hotChanged && !entry.userPaused) {
       entry.video.play().catch(() => {});
     }
 
     if (entry.stream) {
       const track = entry.stream.getVideoTracks()[0];
-      track?.applyConstraints(isHot ? HOT_CONSTRAINTS : coldConstraints).catch(() => {
+      track?.applyConstraints(isShown ? HOT_CONSTRAINTS : coldConstraints).catch(() => {
         // Best-effort — some tab sources ignore constraint changes mid-stream.
       });
     }
 
-    if (changed) syncPlayback(tabId);
+    if (shownChanged) syncPlayback(tabId);
   }
+  mainStage.classList.toggle("split", splitTabId !== null);
   renderEmptyState();
 }
 
@@ -454,6 +556,11 @@ function renderEmptyState() {
 
 async function reconcile(state) {
   hotTabId = state.hotTabId;
+  // Rebuilt fresh from state every time — this is also what confirms a
+  // locally-optimistic drag reorder, since background's broadcast reflects
+  // the same order reorderTabs() already applied client-side.
+  tabOrder = state.trackedTabs.map((t) => t.id);
+  if (splitTabId !== null && !tabOrder.includes(splitTabId)) splitTabId = null;
 
   // Remove tiles for tabs no longer tracked.
   for (const tabId of [...entries.keys()]) {
@@ -467,6 +574,8 @@ async function reconcile(state) {
 
   // Add tiles for newly tracked tabs, and start capturing immediately so
   // media is already live by the time you click a thumbnail to swap to it.
+  // Placement into #main-stage/#thumb-strip happens uniformly below, via
+  // applyHotness() — appendChild works fine on a still-detached node too.
   for (const tab of state.trackedTabs) {
     if (entries.has(tab.id)) continue;
     const { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge } = buildTile(tab);
@@ -481,11 +590,11 @@ async function reconcile(state) {
       capturing: false,
       isLive: null,
       appliedHot: undefined,
+      appliedShown: undefined,
       userPaused: false,
     };
     entries.set(tab.id, entry);
     updateLiveBadge(entry);
-    (tab.id === hotTabId ? mainStage : thumbStrip).appendChild(wrapper);
     startCapture(tab.id);
   }
 
@@ -493,16 +602,13 @@ async function reconcile(state) {
   applyHotness();
 }
 
-// Assigns 1-9 to tracked tabs in track order (stable per-tab "channel
-// numbers", not tied to which one is currently hot) and labels each tile.
-// Tabs beyond the 9th simply get no hotkey — there's no 10th digit key by
-// convention here.
-const hotkeyOrder = [];
+// Assigns 1-9 to tracked tabs in tabOrder (stable per-tab "channel numbers",
+// not tied to which one is currently hot — see reorderTabs() to change it)
+// and labels each tile. Tabs beyond the 9th simply get no hotkey — there's
+// no 10th digit key by convention here.
 function renumberHotkeys() {
-  hotkeyOrder.length = 0;
-  hotkeyOrder.push(...entries.keys());
   for (const [tabId, entry] of entries) {
-    const slot = hotkeyOrder.indexOf(tabId);
+    const slot = tabOrder.indexOf(tabId);
     if (slot >= 0 && slot < 9) {
       entry.hotkeyBadge.textContent = String(slot + 1);
       entry.hotkeyBadge.classList.remove("hidden");
@@ -516,12 +622,34 @@ function isTypingTarget(el) {
   return el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA");
 }
 
+// Steps audio focus to the next/previous tab in tabOrder, wrapping around
+// and skipping any tile whose stream isn't ready yet. Bounded to
+// tabOrder.length attempts so an all-not-ready list can't loop forever.
+function cycleHot(direction) {
+  if (tabOrder.length === 0) return;
+  let idx = tabOrder.indexOf(hotTabId);
+  for (let i = 0; i < tabOrder.length; i++) {
+    idx = (idx + direction + tabOrder.length) % tabOrder.length;
+    const candidate = tabOrder[idx];
+    if (entries.get(candidate)?.stream) {
+      promoteToHot(candidate);
+      return;
+    }
+  }
+}
+
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return; // don't fight browser/OS shortcuts
   if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
-  if (!/^[1-9]$/.test(e.key)) return;
 
-  const tabId = hotkeyOrder[Number(e.key) - 1];
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    e.preventDefault();
+    cycleHot(e.key === "ArrowRight" ? 1 : -1);
+    return;
+  }
+
+  if (!/^[1-9]$/.test(e.key)) return;
+  const tabId = tabOrder[Number(e.key) - 1];
   const entry = tabId !== undefined ? entries.get(tabId) : undefined;
   if (entry?.stream) {
     e.preventDefault();
@@ -537,6 +665,8 @@ async function refreshFromBackground() {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE_CHANGED") {
     reconcile(message.state);
+  } else if (message.type === "TAB_NAVIGATED") {
+    markCaptureLost(message.tabId);
   }
 });
 

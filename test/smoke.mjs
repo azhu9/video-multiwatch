@@ -293,6 +293,88 @@ async function main() {
   assert(mainTabId === thumbTabId, `pressing "2" should promote the second-tracked tab (${thumbTabId}), got ${mainTabId}`);
   console.log("Number-key hotkeys: PASS");
 
+  // --- Drag-to-reorder (via the exposed reorderTabs(), not simulated native
+  // DnD — Playwright's synthetic drag events don't reliably trigger real
+  // HTML5 drag-and-drop, so this checks the actual reordering logic the
+  // drop handler calls rather than the fragile part of driving a real drag) ---
+  // Current tabOrder is [tabA, tabB] (slot 1, 2). Swap it to [tabB, tabA].
+  await viewer.evaluate(
+    ({ a, b }) => window.reorderTabs(b, a),
+    { a: tabAId, b: tabBId }
+  );
+  await viewer.waitForTimeout(100);
+  let badges = await viewer.evaluate(({ a, b }) => ({
+    a: document.querySelector(`.tile[data-tab-id="${a}"] .hotkey-badge`)?.textContent,
+    b: document.querySelector(`.tile[data-tab-id="${b}"] .hotkey-badge`)?.textContent,
+  }), { a: tabAId, b: tabBId });
+  assert(badges.b === "1" && badges.a === "2", `expected reordered badges B=1,A=2, got A=${badges.a},B=${badges.b}`);
+  console.log("Drag-to-reorder (via reorderTabs): PASS");
+
+  // --- Split view (shift+click) ---
+  // tabB is hot (main), tabA is the lone thumbnail at this point.
+  await viewer.locator(`.tile[data-tab-id="${tabAId}"]`).click({ modifiers: ["Shift"] });
+  await viewer.waitForTimeout(200);
+  let splitState = await viewer.evaluate(({ a }) => ({
+    mainStageHasSplit: document.getElementById("main-stage").classList.contains("split"),
+    tileIsSplit: document.querySelector(`.tile[data-tab-id="${a}"]`)?.classList.contains("split-tile"),
+    tileParent: document.querySelector(`.tile[data-tab-id="${a}"]`)?.parentElement?.id,
+    muted: document.querySelector(`.tile[data-tab-id="${a}"] video`)?.muted,
+  }), { a: tabAId });
+  assert(splitState.mainStageHasSplit, "shift+click should put #main-stage into split mode");
+  assert(splitState.tileIsSplit, "shift-clicked tile should carry .split-tile");
+  assert(splitState.tileParent === "main-stage", "split tile should be placed in #main-stage");
+  assert(splitState.muted === true, "split tile should stay muted — only the hot tile has audio");
+
+  // Shift+click again to exit split.
+  await viewer.locator(`.tile[data-tab-id="${tabAId}"]`).click({ modifiers: ["Shift"] });
+  await viewer.waitForTimeout(200);
+  splitState = await viewer.evaluate(() => ({
+    mainStageHasSplit: document.getElementById("main-stage").classList.contains("split"),
+  }));
+  assert(!splitState.mainStageHasSplit, "shift+click again should exit split mode");
+  console.log("Split view (shift+click): PASS");
+
+  // --- Cycle hotkeys (arrow keys) ---
+  // tabB is hot; tabOrder is [tabB, tabA] after the reorder above, so
+  // ArrowRight should move audio focus to tabA, and a second ArrowRight
+  // should wrap back around to tabB.
+  await viewer.evaluate(() => document.activeElement?.blur());
+  await viewer.keyboard.press("ArrowRight");
+  await viewer.waitForTimeout(200);
+  mainTabId = await viewer.evaluate(() => document.querySelector("#main-stage .tile")?.dataset.tabId);
+  assert(mainTabId === String(tabAId), `ArrowRight should cycle to tabA, got ${mainTabId}`);
+
+  await viewer.keyboard.press("ArrowRight");
+  await viewer.waitForTimeout(200);
+  mainTabId = await viewer.evaluate(() => document.querySelector("#main-stage .tile")?.dataset.tabId);
+  assert(mainTabId === String(tabBId), `ArrowRight should wrap back to tabB, got ${mainTabId}`);
+
+  await viewer.keyboard.press("ArrowLeft");
+  await viewer.waitForTimeout(200);
+  mainTabId = await viewer.evaluate(() => document.querySelector("#main-stage .tile")?.dataset.tabId);
+  assert(mainTabId === String(tabAId), `ArrowLeft should cycle back to tabA, got ${mainTabId}`);
+  console.log("Cycle hotkeys (arrow keys): PASS");
+
+  // --- Stale-capture detection via a real tab navigation ---
+  // This is a genuine end-to-end check, not a stub: navigating tabA for
+  // real should make background.js's chrome.tabs.onUpdated listener fire
+  // (changeInfo.url is only set on an actual navigation), which broadcasts
+  // TAB_NAVIGATED, which the viewer should catch and mark that tile lost.
+  await tabA.goto(`http://localhost:${PORT}/stream-b.html`);
+  await viewer.waitForTimeout(500);
+  const lostState = await viewer.evaluate(({ a }) => {
+    const tile = document.querySelector(`.tile[data-tab-id="${a}"]`);
+    return {
+      overlayVisible: !tile.querySelector(".connecting-overlay").classList.contains("hidden"),
+      overlayText: tile.querySelector(".connecting-overlay").textContent,
+      hasSrc: !!tile.querySelector("video").srcObject,
+    };
+  }, { a: tabAId });
+  assert(lostState.overlayVisible, "navigating the tracked tab should surface the connecting/lost overlay");
+  assert(lostState.overlayText.includes("Capture lost"), `expected "Capture lost" text, got "${lostState.overlayText}"`);
+  assert(!lostState.hasSrc, "video srcObject should be cleared once capture is marked lost");
+  console.log("Stale-capture detection (real navigation): PASS");
+
   const unexpectedErrors = errors.filter(
     (e) =>
       !e.includes("tabCapture failed") &&

@@ -90,7 +90,40 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   attached (same "Connecting…" gate as clicking it), and is ignored while
   a dropdown/input has focus or a modifier key (Ctrl/Alt/Cmd/Shift) is
   held, so it doesn't fight the browser's own shortcuts. Tabs beyond the
-  9th don't get a hotkey.
+  9th don't get a hotkey. `ArrowRight`/`ArrowLeft` cycle audio focus to the
+  next/previous tab in that same order, wrapping around and skipping
+  anything not attached yet.
+- **Drag-to-reorder thumbnails** — dragging a thumbnail changes its slot
+  (and therefore its hotkey number and its position in the strip). The
+  drag handler sends the whole new order to `background.js`
+  (`REORDER_TABS`), which persists and broadcasts it, so the order
+  survives a viewer reload too.
+- **Split view**: shift+click a thumbnail to also show it large alongside
+  the audio-focused tile, side by side, instead of only ever showing one
+  tile at a time. The split tile stays muted (there's still only one audio
+  source) but gets full `HOT_CONSTRAINTS` quality like the main tile, and
+  a VOD split tile won't auto-pause just for not being the audio-focused
+  one — being visibly shown is what matters for that, not which one has
+  sound. Shift+click it again (or shift+click a different thumbnail, which
+  replaces the split slot) to exit. Marked with a blue outline.
+- **Stale-capture detection**: a navigation on a tracked tab invalidates
+  `tabCapture`'s per-tab grant for it — the capture just dies. Previously
+  this left a frozen/stale frame with no indication anything was wrong.
+  Now `background.js` watches `chrome.tabs.onUpdated` for a real
+  navigation (`changeInfo.url` is only set on one) on a tracked tab and
+  tells the viewer immediately; separately, every stream's tracks also get
+  an `ended` listener as a catch-all for any other way a capture can die
+  (crash, an unexpected grant lapse). Either path shows a "Capture lost —
+  click to retry" overlay. Retrying works again automatically if the
+  underlying grant is actually still intact; for a real navigation it
+  isn't, and you'll need to switch to that tab and re-invoke the toolbar
+  icon/context menu, same as tracking it the first time.
+- **Tracked tabs are marked non-discardable**
+  (`chrome.tabs.update({autoDiscardable: false})`). Chrome can discard a
+  backgrounded tab under memory pressure to free RAM — exactly the state
+  every tracked tab sits in — which would silently kill its capture. This
+  trades a bit more memory pressure for not losing a stream you're
+  actively watching. Reverted back to discardable when a tab is untracked.
 - **No Picture-in-Picture, on either side.** Our own viewer `<video>`
   elements set `disablePictureInPicture`. Separately, a tracked site's
   *own* player can auto-engage PiP on its source tab once it detects it

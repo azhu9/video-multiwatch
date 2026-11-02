@@ -145,12 +145,33 @@ body {
 #thumb-strip .tile {
   width: 220px;
   aspect-ratio: 16 / 9;
-  cursor: pointer;
+  cursor: grab;
   border: 2px solid transparent;
 }
 
 #thumb-strip .tile:hover {
   border-color: #4a90e2;
+}
+
+#thumb-strip .tile:active {
+  cursor: grabbing;
+}
+
+/* Split view: a second tab shown large (muted) alongside the audio-focused
+   one — shift+click a thumbnail to set it. */
+#main-stage.split {
+  flex-direction: row;
+  gap: 4px;
+}
+
+#main-stage.split .tile {
+  width: calc(50% - 2px);
+  height: 100%;
+}
+
+.tile.split-tile {
+  outline: 2px solid #4a90e2;
+  outline-offset: -2px;
 }
 
 .tile video {
@@ -283,9 +304,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  padding: 10px;
   background: rgba(0, 0, 0, 0.7);
   color: #ccc;
   font-size: 13px;
+  line-height: 1.4;
   cursor: pointer;
 }
 
