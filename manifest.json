@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Multiwatch",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Track multiple live video tabs, watch one with audio, swap between them.",
   "permissions": ["tabs", "tabCapture", "activeTab", "storage", "contextMenus", "scripting"],
   "background": {

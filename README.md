@@ -56,7 +56,31 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   cropping, not something layout space alone can fix. The main view's own
   play/pause/volume/fullscreen bar is hover-revealed (hidden until you
   hover the video) to keep it out of the way, including of an overlaid
-  thumbnail strip.
+  thumbnail strip. The overlay modes have no background/gradient behind
+  the strip by design — each thumbnail tile already has its own opaque
+  background, so a strip-level gradient was just extra dimming nobody
+  asked for.
+- **Thumbnail quality** is a toolbar dropdown (Low/Medium/High —
+  resolution+framerate presets, Low = 320×180@8fps default, High =
+  640×360@30fps), persisted via `localStorage`. Defaults to Low on
+  purpose: running several background captures at once is genuinely
+  CPU/GPU-heavy, and that contention is the most likely cause of A/V
+  drift on weaker devices (see the resync button below) — cranking this
+  up is an explicit opt-in, not a free smoothness win.
+- **Manual resync button** (↻, next to fullscreen on the main view) for
+  audio/video drift. On a long-running live `MediaStream`, concurrent
+  decode load can make the video pipeline fall behind real time with no
+  automatic catch-up — browsers don't aggressively frame-drop a live
+  stream to re-sync it. The button re-attaches `srcObject`, which drops
+  any buffered backlog and snaps the video back to the stream's current
+  live frame. This is deliberately a manual fix rather than automatic:
+  there's no clean way to detect drift from JS (no way to compare audio
+  vs. video presentation position across an arbitrary `tabCapture`
+  stream), so if you notice lag, click it; if drift keeps recurring,
+  lowering thumbnail quality (above) or the number of concurrently
+  tracked tabs is the more durable fix, since the root cause is almost
+  always resource contention on that specific device, not something this
+  button can address at its source.
 - **No Picture-in-Picture, on either side.** Our own viewer `<video>`
   elements set `disablePictureInPicture`. Separately, a tracked site's
   *own* player can auto-engage PiP on its source tab once it detects it

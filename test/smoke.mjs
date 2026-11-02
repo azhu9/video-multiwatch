@@ -245,6 +245,36 @@ async function main() {
   }
   console.log("Thumbnail layout toggle: PASS");
 
+  // --- Thumbnail quality toggle ---
+  // "other" (from the swap-mechanics section above) is the current thumbnail
+  // tile. applyConstraints on a real canvas.captureStream() track is a
+  // normal WebRTC API call (not gated like tabCapture/scripting), so this
+  // checks real effect via getConstraints() rather than stubbing anything.
+  await viewer.locator("#thumb-quality-select").selectOption("high");
+  await viewer.waitForTimeout(150);
+  let coldConstraints = await viewer.evaluate((tid) => {
+    const video = document.querySelector(`.tile[data-tab-id="${tid}"] video`);
+    return video.srcObject.getVideoTracks()[0].getConstraints();
+  }, other.tabId);
+  assert(coldConstraints.frameRate === 30, `expected high-quality frameRate 30, got ${coldConstraints.frameRate}`);
+
+  await viewer.locator("#thumb-quality-select").selectOption("low");
+  await viewer.waitForTimeout(150);
+  coldConstraints = await viewer.evaluate((tid) => {
+    const video = document.querySelector(`.tile[data-tab-id="${tid}"] video`);
+    return video.srcObject.getVideoTracks()[0].getConstraints();
+  }, other.tabId);
+  assert(coldConstraints.frameRate === 8, `expected low-quality frameRate 8 after switching back, got ${coldConstraints.frameRate}`);
+  console.log("Thumbnail quality toggle: PASS");
+
+  // --- Resync button ---
+  await viewer.locator("#main-stage .tile").hover();
+  await viewer.locator("#main-stage .resync-btn").click();
+  await viewer.waitForTimeout(200);
+  const hasSrc = await viewer.evaluate(() => !!document.querySelector("#main-stage video").srcObject);
+  assert(hasSrc, "main video should still have a srcObject after resync");
+  console.log("Resync button: PASS");
+
   const unexpectedErrors = errors.filter(
     (e) =>
       !e.includes("tabCapture failed") &&

@@ -5,12 +5,33 @@
 // lives here.
 
 const HOT_CONSTRAINTS = { width: 1280, height: 720, frameRate: 30 };
-const COLD_CONSTRAINTS = { width: 320, height: 180, frameRate: 8 };
+
+// Thumbnails default to "low" to keep concurrent-decode load down — running
+// several background captures at once is genuinely CPU/GPU-heavy, and on
+// weaker devices that's the most likely cause of A/V drift (see
+// resyncMainVideo() below). Higher presets are an explicit opt-in since they
+// make that contention worse, not better.
+const COLD_PRESETS = {
+  low: { width: 320, height: 180, frameRate: 8 },
+  medium: { width: 480, height: 270, frameRate: 15 },
+  high: { width: 640, height: 360, frameRate: 30 },
+};
+let coldConstraints = COLD_PRESETS.low;
+
+// tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, stream|null,
+//            capturing: a startCapture() call is in flight, isLive: null
+//            (unknown) | true (live, never paused) | false (VOD, paused
+//            while demoted), appliedHot: last hot/cold state we acted on,
+//            userPaused: true once the user hits pause themselves, so an
+//            auto-promote doesn't silently override it }
+const entries = new Map();
+let hotTabId = null;
 
 const mainStage = document.getElementById("main-stage");
 const thumbStrip = document.getElementById("thumb-strip");
 const stage = document.getElementById("stage");
 const thumbLayoutSelect = document.getElementById("thumb-layout-select");
+const thumbQualitySelect = document.getElementById("thumb-quality-select");
 
 const THUMB_LAYOUT_KEY = "multiwatch:thumbLayout";
 function applyThumbLayout(mode) {
@@ -32,14 +53,34 @@ try {
 thumbLayoutSelect.value = savedThumbLayout;
 applyThumbLayout(savedThumbLayout);
 
-// tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, stream|null,
-//            capturing: a startCapture() call is in flight, isLive: null
-//            (unknown) | true (live, never paused) | false (VOD, paused
-//            while demoted), appliedHot: last hot/cold state we acted on,
-//            userPaused: true once the user hits pause themselves, so an
-//            auto-promote doesn't silently override it }
-const entries = new Map();
-let hotTabId = null;
+const THUMB_QUALITY_KEY = "multiwatch:thumbQuality";
+function applyThumbQuality(preset) {
+  coldConstraints = COLD_PRESETS[preset] || COLD_PRESETS.low;
+  try {
+    localStorage.setItem(THUMB_QUALITY_KEY, preset);
+  } catch {
+    // Ignore — just won't persist.
+  }
+  // applyHotness() only re-applies constraints when a tile's hot/cold state
+  // *changes* — a quality-setting change needs to push to every cold tile
+  // immediately regardless of whether its hot state changed.
+  for (const [tabId, entry] of entries) {
+    if (tabId === hotTabId || !entry.stream) continue;
+    entry.stream
+      .getVideoTracks()[0]
+      ?.applyConstraints(coldConstraints)
+      .catch(() => {});
+  }
+}
+thumbQualitySelect.addEventListener("change", (e) => applyThumbQuality(e.target.value));
+let savedThumbQuality = "low";
+try {
+  savedThumbQuality = localStorage.getItem(THUMB_QUALITY_KEY) || "low";
+} catch {
+  // Ignore — default to "low".
+}
+thumbQualitySelect.value = savedThumbQuality;
+applyThumbQuality(savedThumbQuality);
 
 function sendMessage(message) {
   return chrome.runtime.sendMessage(message);
@@ -119,7 +160,16 @@ function buildTile(tab) {
     video.requestFullscreen().catch((err) => console.error("requestFullscreen failed", err));
   });
 
-  mainControls.append(playPauseBtn, volumeSlider, fullscreenBtn);
+  const resyncBtn = document.createElement("button");
+  resyncBtn.className = "resync-btn";
+  resyncBtn.textContent = "↻";
+  resyncBtn.title = "Resync video if it's drifted behind the audio";
+  resyncBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    resyncVideo(tab.id);
+  });
+
+  mainControls.append(playPauseBtn, volumeSlider, fullscreenBtn, resyncBtn);
 
   const overlayBottom = document.createElement("div");
   overlayBottom.className = "overlay-bottom";
@@ -162,6 +212,25 @@ function togglePlayPause(tabId) {
     entry.video.pause();
     if (entry.isLive === false) setTabPlayback(tabId, false);
   }
+}
+
+// Manual fix for audio/video drift: on a long-running live MediaStream,
+// concurrent-decode load (several background captures at once) can cause
+// the video pipeline to fall behind real time, with no automatic catch-up —
+// browsers don't aggressively frame-drop a live MediaStream to re-sync it.
+// Re-attaching srcObject drops any backlog and snaps the video back to the
+// stream's current live frame. We can't reliably *detect* drift from JS
+// (no clean way to compare audio vs. video presentation position across an
+// arbitrary tabCapture stream), so this is a manual "fix it now" button
+// rather than something automatic.
+function resyncVideo(tabId) {
+  const entry = entries.get(tabId);
+  if (!entry || !entry.stream) return;
+  const wasMuted = entry.video.muted;
+  entry.video.srcObject = null;
+  entry.video.srcObject = entry.stream;
+  entry.video.muted = wasMuted;
+  entry.video.play().catch(() => {});
 }
 
 function updateLiveBadge(entry) {
@@ -353,7 +422,7 @@ function applyHotness() {
 
     if (entry.stream) {
       const track = entry.stream.getVideoTracks()[0];
-      track?.applyConstraints(isHot ? HOT_CONSTRAINTS : COLD_CONSTRAINTS).catch(() => {
+      track?.applyConstraints(isHot ? HOT_CONSTRAINTS : coldConstraints).catch(() => {
         // Best-effort — some tab sources ignore constraint changes mid-stream.
       });
     }

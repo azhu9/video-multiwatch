@@ -56,6 +56,23 @@ body {
   padding: 3px 4px;
 }
 
+#thumb-quality-control {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ccc;
+}
+
+#thumb-quality-control select {
+  background: #2a2a2a;
+  color: #eee;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 3px 4px;
+}
+
 #stage {
   position: relative;
   flex: 1;
@@ -90,8 +107,9 @@ body {
 
 /* Overlay modes float the thumbnail strip over the main video's own
    letterbox space instead of reserving a dedicated row/column — the main
-   video gets the full stage either way. Known rough edge: in
-   overlay-bottom, the floating strip can sit over the main tile's own
+   video gets the full stage either way. No background here by design (each
+   thumbnail tile already has its own opaque background) — Known rough edge:
+   in overlay-bottom, the floating strip can sit over the main tile's own
    label row at the very bottom. */
 #stage.layout-overlay-bottom #thumb-strip {
   position: absolute;
@@ -99,7 +117,6 @@ body {
   right: 0;
   bottom: 0;
   z-index: 5;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 50%);
 }
 
 #stage.layout-overlay-left #thumb-strip {
@@ -111,7 +128,6 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.75) 60%, transparent);
 }
 
 #stage.layout-overlay-left #thumb-strip .tile {
