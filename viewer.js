@@ -19,7 +19,7 @@ const COLD_PRESETS = {
 let coldConstraints = COLD_PRESETS.low;
 
 // tabId -> { tab, wrapper, video, connectingOverlay, liveBadge, hotkeyBadge,
-//            stream|null, capturing: a startCapture() call is in flight,
+//            splitBtn, stream|null, capturing: a startCapture() call is in flight,
 //            isLive: null (unknown) | true (live, never paused) | false
 //            (VOD, paused while demoted), appliedHot/appliedShown: last
 //            audio-focus/main-stage-visibility state we acted on,
@@ -151,7 +151,21 @@ function buildTile(tab) {
     updateLiveBadge(entry);
     syncPlayback(tab.id);
   });
-  label.append(favicon, title, liveBadge, removeBtn);
+
+  // Discoverable alternative to the shift+click split-view shortcut — hidden
+  // via CSS on the actual audio-focused tile (toggling it there is a no-op,
+  // see toggleSplit()), shown everywhere else including on the split tile
+  // itself so it doubles as the "remove from split" control.
+  const splitBtn = document.createElement("button");
+  splitBtn.className = "split-btn";
+  splitBtn.textContent = "⧉";
+  splitBtn.title = "Also show this large, alongside the audio-focused tile (split view)";
+  splitBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleSplit(tab.id);
+  });
+
+  label.append(favicon, title, liveBadge, splitBtn, removeBtn);
 
   // Only shown/usable on the main (hot) tile — CSS hides this on thumbnails.
   const mainControls = document.createElement("div");
@@ -227,7 +241,7 @@ function buildTile(tab) {
     }
   });
 
-  return { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge };
+  return { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge, splitBtn };
 }
 
 // Pausing a VOD tile also pauses its real source tab (so playback position
@@ -455,6 +469,12 @@ function markCaptureLost(tabId) {
 
 function untrackTab(tabId) {
   const entry = entries.get(tabId);
+  // Stopping our capture restores the source tab's native audio output (tab
+  // audio capture mutes it while active) — without this, untracking a tab
+  // leaves it playing audibly in the background instead of actually
+  // stopping. Pause regardless of live/VOD: the point here isn't preserving
+  // position to resume later, it's "I'm done watching this."
+  setTabPlayback(tabId, false);
   if (entry?.stream) entry.stream.getTracks().forEach((t) => t.stop());
   entries.delete(tabId);
   entry?.wrapper.remove();
@@ -515,6 +535,7 @@ function applyHotness() {
 
     entry.video.muted = !isHot;
     entry.wrapper.classList.toggle("split-tile", isSplit);
+    entry.splitBtn.classList.toggle("active", isSplit);
     (isShown ? mainStage : thumbStrip).appendChild(entry.wrapper);
 
     // Flipping .muted doesn't reliably resume playback under Chrome's
@@ -578,7 +599,7 @@ async function reconcile(state) {
   // applyHotness() — appendChild works fine on a still-detached node too.
   for (const tab of state.trackedTabs) {
     if (entries.has(tab.id)) continue;
-    const { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge } = buildTile(tab);
+    const { wrapper, video, connectingOverlay, liveBadge, hotkeyBadge, splitBtn } = buildTile(tab);
     const entry = {
       tab,
       wrapper,
@@ -586,6 +607,7 @@ async function reconcile(state) {
       connectingOverlay,
       liveBadge,
       hotkeyBadge,
+      splitBtn,
       stream: null,
       capturing: false,
       isLive: null,

@@ -53,13 +53,18 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   choice persists via `localStorage`. Note: with a very wide/short window
   and 16:9 content, `object-fit: contain` will still letterbox left/right
   no matter what — that's a consequence of preserving aspect ratio without
-  cropping, not something layout space alone can fix. The main view's own
-  play/pause/volume/fullscreen bar is hover-revealed (hidden until you
-  hover the video) to keep it out of the way, including of an overlaid
-  thumbnail strip. The overlay modes have no background/gradient behind
-  the strip by design — each thumbnail tile already has its own opaque
-  background, so a strip-level gradient was just extra dimming nobody
-  asked for.
+  cropping, not something layout space alone can fix. **Every tile's title
+  bar** (favicon/title/LIVE-VOD badge/split/remove, plus the main view's
+  play/pause/volume/fullscreen bar) is hover-revealed — hidden until you
+  hover that tile — so a thumbnail's title doesn't sit permanently over
+  part of the preview, and an overlaid thumbnail strip doesn't have to
+  fight it for the same space. The overlay modes have no background behind
+  the strip — each thumbnail tile already has its own opaque background,
+  so a strip-level background was just extra dimming/a solid box nobody
+  asked for. (An earlier version only removed the *gradient* override and
+  left `#thumb-strip`'s own solid black background showing through
+  underneath — a real bug, now actually fixed with an explicit
+  `background: none`.)
 - **Thumbnail quality** is a toolbar dropdown (Low/Medium/High —
   resolution+framerate presets, Low = 320×180@8fps default, High =
   640×360@30fps), persisted via `localStorage`. Defaults to Low on
@@ -98,14 +103,17 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   drag handler sends the whole new order to `background.js`
   (`REORDER_TABS`), which persists and broadcasts it, so the order
   survives a viewer reload too.
-- **Split view**: shift+click a thumbnail to also show it large alongside
-  the audio-focused tile, side by side, instead of only ever showing one
-  tile at a time. The split tile stays muted (there's still only one audio
-  source) but gets full `HOT_CONSTRAINTS` quality like the main tile, and
-  a VOD split tile won't auto-pause just for not being the audio-focused
-  one — being visibly shown is what matters for that, not which one has
-  sound. Shift+click it again (or shift+click a different thumbnail, which
-  replaces the split slot) to exit. Marked with a blue outline.
+- **Split view**: click the ⧉ button on a thumbnail (next to the LIVE/VOD
+  badge — appears on hover, same as the rest of the title bar) to also
+  show it large alongside the audio-focused tile, side by side, instead of
+  only ever showing one tile at a time. Shift+click a thumbnail does the
+  same thing, as a shortcut. The split tile stays muted (there's still
+  only one audio source) but gets full `HOT_CONSTRAINTS` quality like the
+  main tile, and a VOD split tile won't auto-pause just for not being the
+  audio-focused one — being visibly shown is what matters for that, not
+  which one has sound. Click the ⧉ button again (now highlighted blue) or
+  shift+click a different thumbnail (which replaces the split slot) to
+  exit. The split tile itself is marked with a blue outline.
 - **Stale-capture detection**: a navigation on a tracked tab invalidates
   `tabCapture`'s per-tab grant for it — the capture just dies. Previously
   this left a frozen/stale frame with no indication anything was wrong.
@@ -143,6 +151,13 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   stream attaches; clicking it manually retries, which doubles as a
   fallback gesture-backed trigger if the automatic attempt ever hits a
   permission wall the toolbar click didn't already clear.
+- **Untracking pauses the source tab.** Stopping our capture of a tab
+  restores its native audio output (tab-audio capture mutes the source
+  while active), so without an explicit pause, removing a tracked tab used
+  to leave it quietly playing — then audibly playing — in the background.
+  `untrackTab()` now pauses the real source video first, regardless of
+  live/VOD: the point here isn't preserving a resume position, it's "I'm
+  done watching this."
 
 ## Loading it (unpacked, for personal use)
 

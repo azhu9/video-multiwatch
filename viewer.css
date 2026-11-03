@@ -107,16 +107,18 @@ body {
 
 /* Overlay modes float the thumbnail strip over the main video's own
    letterbox space instead of reserving a dedicated row/column — the main
-   video gets the full stage either way. No background here by design (each
-   thumbnail tile already has its own opaque background) — Known rough edge:
-   in overlay-bottom, the floating strip can sit over the main tile's own
-   label row at the very bottom. */
+   video gets the full stage either way. background: none explicitly
+   overrides #thumb-strip's own solid background above — each thumbnail
+   tile already has its own opaque background, so the strip itself should
+   have none (previously this was only a comment, not an actual override,
+   which left a solid black box behind the floating thumbnails). */
 #stage.layout-overlay-bottom #thumb-strip {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 5;
+  background: none;
 }
 
 #stage.layout-overlay-left #thumb-strip {
@@ -128,6 +130,7 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
+  background: none;
 }
 
 #stage.layout-overlay-left #thumb-strip .tile {
@@ -181,14 +184,29 @@ body {
   display: block;
 }
 
+/* Hover/focus-reveal for the whole title+controls bar, on every tile (not
+   just main) — keeps the bottom of the video/thumbnail clear by default
+   instead of the title permanently covering part of the preview, and also
+   keeps it from fighting a floating thumbnail overlay for the same space. */
 .tile .overlay-bottom {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 2; /* above .connecting-overlay, so remove/live-badge/etc. stay
+                 reachable on hover even while a tile is connecting/lost */
   display: flex;
   flex-direction: column;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.tile:hover .overlay-bottom,
+.tile:focus-within .overlay-bottom {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tile .label {
@@ -208,17 +226,6 @@ body {
   align-items: center;
   gap: 10px;
   padding: 6px 10px 0;
-  /* Hover/focus-reveal: keeps the bottom of the video clear by default,
-     which also reduces overlap with a floating thumbnail overlay. */
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-
-#main-stage .tile:hover .main-controls,
-#main-stage .tile:focus-within .main-controls {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .tile .main-controls button {
@@ -298,9 +305,33 @@ body {
   padding: 0 4px;
 }
 
+.tile .split-btn {
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  color: #eee;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.tile .split-btn.active {
+  background: #4a90e2;
+  color: #fff;
+}
+
+/* Toggling it on the actual audio-focused tile is a no-op (see
+   toggleSplit()) — hide it there specifically. Still shown on the split
+   tile itself (so it doubles as "remove from split") and on every
+   thumbnail. */
+#main-stage .tile:not(.split-tile) .split-btn {
+  display: none;
+}
+
 .tile .connecting-overlay {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;

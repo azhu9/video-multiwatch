@@ -160,7 +160,9 @@ async function main() {
   const clearCalls = () => viewer.evaluate(() => (window.__scriptingCalls = []));
 
   // thumbTabId is currently hot (promoted above). Mark it VOD via its badge —
-  // since it's hot, that should immediately send a "play" call.
+  // since it's hot, that should immediately send a "play" call. The label
+  // bar is hover-revealed now, same as main-controls, so hover first.
+  await viewer.locator("#main-stage .tile").hover();
   await viewer.locator("#main-stage .live-badge").click();
   await viewer.waitForTimeout(200);
   let calls = await getCalls();
@@ -334,6 +336,28 @@ async function main() {
   assert(!splitState.mainStageHasSplit, "shift+click again should exit split mode");
   console.log("Split view (shift+click): PASS");
 
+  // --- Split view via the visible button (discoverability fix — the
+  // overlay-bottom bar, including this button, is hover-revealed now) ---
+  const thumbA = viewer.locator(`.tile[data-tab-id="${tabAId}"]`);
+  await thumbA.hover();
+  await thumbA.locator(".split-btn").click();
+  await viewer.waitForTimeout(200);
+  splitState = await viewer.evaluate(({ a }) => ({
+    mainStageHasSplit: document.getElementById("main-stage").classList.contains("split"),
+    btnActive: document.querySelector(`.tile[data-tab-id="${a}"] .split-btn`)?.classList.contains("active"),
+  }), { a: tabAId });
+  assert(splitState.mainStageHasSplit, "clicking the split button should enter split mode");
+  assert(splitState.btnActive, "the split button should show active state while split");
+
+  await thumbA.hover(); // now in #main-stage as the split tile — re-hover there
+  await thumbA.locator(".split-btn").click();
+  await viewer.waitForTimeout(200);
+  splitState = await viewer.evaluate(() => ({
+    mainStageHasSplit: document.getElementById("main-stage").classList.contains("split"),
+  }));
+  assert(!splitState.mainStageHasSplit, "clicking the split button again should exit split mode");
+  console.log("Split view (button): PASS");
+
   // --- Cycle hotkeys (arrow keys) ---
   // tabB is hot; tabOrder is [tabB, tabA] after the reorder above, so
   // ArrowRight should move audio focus to tabA, and a second ArrowRight
@@ -374,6 +398,38 @@ async function main() {
   assert(lostState.overlayText.includes("Capture lost"), `expected "Capture lost" text, got "${lostState.overlayText}"`);
   assert(!lostState.hasSrc, "video srcObject should be cleared once capture is marked lost");
   console.log("Stale-capture detection (real navigation): PASS");
+
+  // --- Overlay layouts have no background (regression check — an earlier
+  // version left the gradient removed but the solid #thumb-strip background
+  // still showing through as a flat black box) ---
+  await viewer.locator("#thumb-layout-select").selectOption("overlay-left");
+  await viewer.waitForTimeout(150);
+  const stripBg = await viewer.evaluate(
+    () => getComputedStyle(document.getElementById("thumb-strip")).backgroundColor
+  );
+  assert(
+    stripBg === "rgba(0, 0, 0, 0)" || stripBg === "transparent",
+    `expected #thumb-strip to have no background in overlay mode, got "${stripBg}"`
+  );
+  await viewer.locator("#thumb-layout-select").selectOption("below");
+  console.log("Overlay layout has no background: PASS");
+
+  // --- Untracking pauses the source tab ---
+  // Stopping capture restores the source tab's native audio — without an
+  // explicit pause, untracking leaves it playing audibly in the background.
+  await clearCalls();
+  const tileA = viewer.locator(`.tile[data-tab-id="${tabAId}"]`);
+  await tileA.hover();
+  await tileA.locator(".remove-btn").click();
+  await viewer.waitForTimeout(200);
+  calls = await getCalls();
+  assert(
+    calls.some((c) => c.tabId === tabAId && c.shouldPlay === false),
+    "untracking a tab should pause its source video"
+  );
+  const tileCountAfterRemove = await viewer.locator(".tile").count();
+  assert(tileCountAfterRemove === 1, `expected 1 tile left after removing one, got ${tileCountAfterRemove}`);
+  console.log("Untrack pauses source tab: PASS");
 
   const unexpectedErrors = errors.filter(
     (e) =>
