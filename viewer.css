@@ -148,16 +148,12 @@ body {
 #thumb-strip .tile {
   width: 220px;
   aspect-ratio: 16 / 9;
-  cursor: grab;
+  cursor: pointer;
   border: 2px solid transparent;
 }
 
 #thumb-strip .tile:hover {
   border-color: #4a90e2;
-}
-
-#thumb-strip .tile:active {
-  cursor: grabbing;
 }
 
 /* Split view: a second tab shown large (muted) alongside the audio-focused

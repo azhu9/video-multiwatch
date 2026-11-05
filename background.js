@@ -65,30 +65,6 @@ async function setHotTab(tabId) {
   return state;
 }
 
-// Reorders trackedTabs to match `order` (an array of tabIds) — drives both
-// the DOM order in the viewer and its number-key hotkey assignment. Ignores
-// any id that isn't actually tracked, and appends any tracked tab missing
-// from `order` as a safety net so a stale/partial order never drops a tab.
-async function reorderTrackedTabs(order) {
-  const state = await getState();
-  const byId = new Map(state.trackedTabs.map((t) => [t.id, t]));
-  const seen = new Set();
-  const reordered = [];
-  for (const id of order) {
-    const t = byId.get(id);
-    if (t && !seen.has(id)) {
-      seen.add(id);
-      reordered.push(t);
-    }
-  }
-  for (const t of state.trackedTabs) {
-    if (!seen.has(t.id)) reordered.push(t);
-  }
-  state.trackedTabs = reordered;
-  await setState(state);
-  return state;
-}
-
 async function openOrFocusViewer() {
   const existing = await chrome.tabs.query({ url: VIEWER_URL });
   if (existing.length > 0) {
@@ -155,9 +131,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       case "SET_HOT":
         sendResponse(await setHotTab(message.tabId));
-        break;
-      case "REORDER_TABS":
-        sendResponse(await reorderTrackedTabs(message.order));
         break;
       default:
         sendResponse(null);

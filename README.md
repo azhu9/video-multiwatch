@@ -97,12 +97,10 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   held, so it doesn't fight the browser's own shortcuts. Tabs beyond the
   9th don't get a hotkey. `ArrowRight`/`ArrowLeft` cycle audio focus to the
   next/previous tab in that same order, wrapping around and skipping
-  anything not attached yet.
-- **Drag-to-reorder thumbnails** — dragging a thumbnail changes its slot
-  (and therefore its hotkey number and its position in the strip). The
-  drag handler sends the whole new order to `background.js`
-  (`REORDER_TABS`), which persists and broadcasts it, so the order
-  survives a viewer reload too.
+  anything not attached yet. Hotkey slots are fixed at track order and
+  aren't currently reorderable — an earlier drag-to-reorder feature was
+  removed because making every tile `draggable` interfered with dragging
+  the volume slider's `<input type="range">` thumb inside it.
 - **Split view**: click the ⧉ button on a thumbnail (next to the LIVE/VOD
   badge — appears on hover, same as the rest of the title bar) to also
   show it large alongside the audio-focused tile, side by side, instead of

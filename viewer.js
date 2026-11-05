@@ -29,7 +29,6 @@ const entries = new Map();
 let hotTabId = null; // the one tab with audio
 let splitTabId = null; // an optional second tab shown large (muted) alongside it — shift+click a thumbnail to set
 // Canonical tab order: drives hotkey numbering, DOM order, and cycling.
-// Track order by default, but user-reorderable via drag-and-drop.
 let tabOrder = [];
 
 const mainStage = document.getElementById("main-stage");
@@ -97,22 +96,7 @@ function buildTile(tab) {
   const wrapper = document.createElement("div");
   wrapper.className = "tile";
   wrapper.dataset.tabId = String(tab.id);
-  wrapper.draggable = true;
-  wrapper.title = "Click to switch audio to this tab. Shift+click to also show it large (split view). Drag to reorder.";
-  wrapper.addEventListener("dragstart", (e) => {
-    e.dataTransfer.setData("text/plain", String(tab.id));
-    e.dataTransfer.effectAllowed = "move";
-  });
-  wrapper.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  });
-  wrapper.addEventListener("drop", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const draggedId = Number(e.dataTransfer.getData("text/plain"));
-    if (!Number.isNaN(draggedId) && draggedId !== tab.id) reorderTabs(draggedId, tab.id);
-  });
+  wrapper.title = "Click to switch audio to this tab. Shift+click to also show it large (split view).";
 
   const video = document.createElement("video");
   video.autoplay = true;
@@ -513,28 +497,11 @@ function toggleSplit(tabId) {
   applyHotness();
 }
 
-// Reorders tabOrder locally for instant feedback, then tells background.js
-// so it persists and broadcasts to any other context. tabOrder (not DOM
-// position) is the source of truth both for hotkey numbering and for where
-// applyHotness() places each tile, so updating it is enough to move things.
-function reorderTabs(draggedId, targetId) {
-  const newOrder = [...tabOrder];
-  const fromIdx = newOrder.indexOf(draggedId);
-  const toIdx = newOrder.indexOf(targetId);
-  if (fromIdx === -1 || toIdx === -1) return;
-  newOrder.splice(fromIdx, 1);
-  newOrder.splice(toIdx, 0, draggedId);
-  tabOrder = newOrder;
-  renumberHotkeys();
-  applyHotness();
-  sendMessage({ type: "REORDER_TABS", order: newOrder });
-}
-
 function applyHotness() {
   // Iterates tabOrder (not entries' Map insertion order) so DOM placement
-  // respects reordering — appendChild on an already-attached node moves it,
-  // so walking tiles in tabOrder naturally keeps both #main-stage and
-  // #thumb-strip sorted to match.
+  // stays consistent with hotkey numbering — appendChild on an
+  // already-attached node moves it, so walking tiles in tabOrder naturally
+  // keeps both #main-stage and #thumb-strip sorted to match.
   for (const tabId of tabOrder) {
     const entry = entries.get(tabId);
     if (!entry) continue;
@@ -591,9 +558,6 @@ function renderEmptyState() {
 
 async function reconcile(state) {
   hotTabId = state.hotTabId;
-  // Rebuilt fresh from state every time — this is also what confirms a
-  // locally-optimistic drag reorder, since background's broadcast reflects
-  // the same order reorderTabs() already applied client-side.
   tabOrder = state.trackedTabs.map((t) => t.id);
   if (splitTabId !== null && !tabOrder.includes(splitTabId)) splitTabId = null;
 
@@ -639,9 +603,9 @@ async function reconcile(state) {
 }
 
 // Assigns 1-9 to tracked tabs in tabOrder (stable per-tab "channel numbers",
-// not tied to which one is currently hot — see reorderTabs() to change it)
-// and labels each tile. Tabs beyond the 9th simply get no hotkey — there's
-// no 10th digit key by convention here.
+// fixed at track order — not tied to which one is currently hot) and
+// labels each tile. Tabs beyond the 9th simply get no hotkey — there's no
+// 10th digit key by convention here.
 function renumberHotkeys() {
   for (const [tabId, entry] of entries) {
     const slot = tabOrder.indexOf(tabId);

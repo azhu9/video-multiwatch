@@ -295,23 +295,6 @@ async function main() {
   assert(mainTabId === thumbTabId, `pressing "2" should promote the second-tracked tab (${thumbTabId}), got ${mainTabId}`);
   console.log("Number-key hotkeys: PASS");
 
-  // --- Drag-to-reorder (via the exposed reorderTabs(), not simulated native
-  // DnD — Playwright's synthetic drag events don't reliably trigger real
-  // HTML5 drag-and-drop, so this checks the actual reordering logic the
-  // drop handler calls rather than the fragile part of driving a real drag) ---
-  // Current tabOrder is [tabA, tabB] (slot 1, 2). Swap it to [tabB, tabA].
-  await viewer.evaluate(
-    ({ a, b }) => window.reorderTabs(b, a),
-    { a: tabAId, b: tabBId }
-  );
-  await viewer.waitForTimeout(100);
-  let badges = await viewer.evaluate(({ a, b }) => ({
-    a: document.querySelector(`.tile[data-tab-id="${a}"] .hotkey-badge`)?.textContent,
-    b: document.querySelector(`.tile[data-tab-id="${b}"] .hotkey-badge`)?.textContent,
-  }), { a: tabAId, b: tabBId });
-  assert(badges.b === "1" && badges.a === "2", `expected reordered badges B=1,A=2, got A=${badges.a},B=${badges.b}`);
-  console.log("Drag-to-reorder (via reorderTabs): PASS");
-
   // --- Split view (shift+click) ---
   // tabB is hot (main), tabA is the lone thumbnail at this point.
   await viewer.locator(`.tile[data-tab-id="${tabAId}"]`).click({ modifiers: ["Shift"] });
@@ -426,8 +409,8 @@ async function main() {
   // --- Cycle hotkeys (arrow keys) ---
   // Force a known baseline (tabB hot) rather than relying on exactly what
   // state the split-view block above left things in. tabOrder is
-  // [tabB, tabA] after the earlier reorder, so ArrowRight should move
-  // audio focus to tabA, and a second ArrowRight should wrap back to tabB.
+  // [tabA, tabB] (track order), so ArrowRight should move audio focus to
+  // tabA, and a second ArrowRight should wrap back to tabB.
   await viewer.evaluate((id) => window.promoteToHot(id), tabBId);
   await viewer.waitForTimeout(200);
   await viewer.evaluate(() => document.activeElement?.blur());
