@@ -111,9 +111,17 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   only one audio source) but gets full `HOT_CONSTRAINTS` quality like the
   main tile, and a VOD split tile won't auto-pause just for not being the
   audio-focused one — being visibly shown is what matters for that, not
-  which one has sound. Click the ⧉ button again (now highlighted blue) or
-  shift+click a different thumbnail (which replaces the split slot) to
-  exit. The split tile itself is marked with a blue outline.
+  which one has sound. **Plain-clicking either of the two tiles shown in
+  split mode swaps audio focus between them** — both stay visible side by
+  side, only who has sound changes. Only the dedicated ⧉ button (now
+  highlighted blue on the split tile) or shift+clicking a different
+  thumbnail actually exits split. The split tile itself is marked with a
+  blue outline. (An earlier version routed every plain click through
+  `promoteToHot()` unconditionally, which left `splitTabId` stuck pointing
+  at a tile that had just also become hot — `#main-stage` kept its 2-up
+  split layout with only one tile left in it, rendering centered and
+  half-width instead of back to normal. `promoteToHot()` now detects
+  clicking the current split partner and swaps roles instead.)
 - **Stale-capture detection**: a navigation on a tracked tab invalidates
   `tabCapture`'s per-tab grant for it — the capture just dies. Previously
   this left a frozen/stale frame with no indication anything was wrong.
@@ -157,7 +165,13 @@ See `SPEC.md` for the full feasibility writeup and architecture rationale.
   to leave it quietly playing — then audibly playing — in the background.
   `untrackTab()` now pauses the real source video first, regardless of
   live/VOD: the point here isn't preserving a resume position, it's "I'm
-  done watching this."
+  done watching this." This didn't actually take effect in practice at
+  first: the pause call (`chrome.scripting.executeScript`, async) was
+  fired without waiting for it, immediately followed by synchronously
+  stopping the capture session on the very next line — a real race that
+  could invalidate whatever grant the scripting call needs before it
+  finishes, silently dropping the pause. `untrackTab()` now `await`s it
+  before tearing down the capture.
 
 ## Loading it (unpacked, for personal use)
 

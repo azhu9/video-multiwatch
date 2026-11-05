@@ -295,7 +295,7 @@ function updateLiveBadge(entry) {
 // keep running in the background regardless of hot/cold state, since the
 // whole point is to not miss anything live.
 function setTabPlayback(tabId, shouldPlay) {
-  chrome.scripting
+  return chrome.scripting
     .executeScript({
       target: { tabId, allFrames: true },
       func: (play) => {
@@ -467,14 +467,18 @@ function markCaptureLost(tabId) {
   applyHotness();
 }
 
-function untrackTab(tabId) {
+async function untrackTab(tabId) {
   const entry = entries.get(tabId);
   // Stopping our capture restores the source tab's native audio output (tab
   // audio capture mutes it while active) — without this, untracking a tab
   // leaves it playing audibly in the background instead of actually
   // stopping. Pause regardless of live/VOD: the point here isn't preserving
-  // position to resume later, it's "I'm done watching this."
-  setTabPlayback(tabId, false);
+  // position to resume later, it's "I'm done watching this." Must actually
+  // finish before we stop our own capture tracks below — firing it and
+  // immediately tearing down the capture session risked invalidating
+  // whatever grant the scripting call needs mid-flight, silently losing
+  // the pause.
+  await setTabPlayback(tabId, false);
   if (entry?.stream) entry.stream.getTracks().forEach((t) => t.stop());
   entries.delete(tabId);
   entry?.wrapper.remove();
@@ -485,6 +489,15 @@ function untrackTab(tabId) {
 }
 
 function promoteToHot(tabId) {
+  // Clicking the current split partner while split is active should swap
+  // audio between the two tiles already shown side by side — not leave
+  // splitTabId stale, pointing at a tile that's now also hot. That bug
+  // used to collapse #main-stage down to one tile while its "split" class
+  // (and that tile's 50%-width split styling) stuck around, rendering it
+  // centered and half-width instead of back to normal.
+  if (splitTabId !== null && tabId === splitTabId) {
+    splitTabId = hotTabId;
+  }
   sendMessage({ type: "SET_HOT", tabId });
   // Optimistic local update; STATE_CHANGED will confirm/correct it.
   hotTabId = tabId;
@@ -492,7 +505,8 @@ function promoteToHot(tabId) {
 }
 
 // A tile already promoted to audio-focus can't also be the split partner —
-// it's already shown large, and audio focus is set via a plain click.
+// it's already shown large, and audio focus is set via a plain click (or,
+// if it's the current split partner, via promoteToHot()'s swap above).
 function toggleSplit(tabId) {
   if (tabId === hotTabId) return;
   splitTabId = splitTabId === tabId ? null : tabId;

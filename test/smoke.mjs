@@ -358,10 +358,78 @@ async function main() {
   assert(!splitState.mainStageHasSplit, "clicking the split button again should exit split mode");
   console.log("Split view (button): PASS");
 
+  // --- Clicking either split-mode tile swaps audio between them, and
+  // exiting split cleanly returns to a single full tile ---
+  // Reproduces the exact bug reported: plain-clicking the split partner
+  // used to leave splitTabId stale (still pointing at a tile that was now
+  // also hot), so #main-stage kept its "split" layout/width with only one
+  // tile left in it — rendered centered and half-width instead of normal.
+  //
+  // Force a known baseline first via the real (not stubbed) promoteToHot/
+  // toggleSplit functions directly — prior tests in this file may have left
+  // hot/split state anywhere, and the point of this block is the swap
+  // behavior itself, not re-deriving setup through a chain of UI clicks.
+  await viewer.evaluate(
+    ({ a, b }) => {
+      window.promoteToHot(a);
+      window.toggleSplit(b);
+    },
+    { a: tabAId, b: tabBId }
+  );
+  await viewer.waitForTimeout(200);
+  let state = await viewer.evaluate(({ a, b }) => ({
+    tileCount: document.querySelectorAll("#main-stage .tile").length,
+    aMuted: document.querySelector(`.tile[data-tab-id="${a}"] video`)?.muted,
+    bMuted: document.querySelector(`.tile[data-tab-id="${b}"] video`)?.muted,
+  }), { a: tabAId, b: tabBId });
+  assert(state.tileCount === 2, `expected 2 tiles in #main-stage after entering split, got ${state.tileCount}`);
+  assert(state.aMuted === false && state.bMuted === true, "baseline should be: A hot (unmuted), B split (muted)");
+
+  // Plain-click the split tile (B) — should swap audio to B, keep both shown.
+  await viewer.locator(`.tile[data-tab-id="${tabBId}"]`).click();
+  await viewer.waitForTimeout(200);
+  state = await viewer.evaluate(({ a, b }) => ({
+    mainStageHasSplit: document.getElementById("main-stage").classList.contains("split"),
+    tileCount: document.querySelectorAll("#main-stage .tile").length,
+    aMuted: document.querySelector(`.tile[data-tab-id="${a}"] video`)?.muted,
+    bMuted: document.querySelector(`.tile[data-tab-id="${b}"] video`)?.muted,
+  }), { a: tabAId, b: tabBId });
+  assert(state.mainStageHasSplit, "split mode should still be active after swapping audio within it");
+  assert(state.tileCount === 2, `expected both tiles to remain shown after the swap, got ${state.tileCount}`);
+  assert(state.bMuted === false, "clicking B should make it the audio-focused (unmuted) tile");
+  assert(state.aMuted === true, "A should become muted (the split partner) after the swap");
+
+  // Swap back by clicking A again — symmetric in the other direction too.
+  await viewer.locator(`.tile[data-tab-id="${tabAId}"]`).click();
+  await viewer.waitForTimeout(200);
+  state = await viewer.evaluate(({ a, b }) => ({
+    tileCount: document.querySelectorAll("#main-stage .tile").length,
+    aMuted: document.querySelector(`.tile[data-tab-id="${a}"] video`)?.muted,
+  }), { a: tabAId, b: tabBId });
+  assert(state.tileCount === 2, `expected both tiles still shown after swapping back, got ${state.tileCount}`);
+  assert(state.aMuted === false, "clicking A again should swap audio back to it");
+
+  // Exit split via its button — should land on exactly one full tile, not a
+  // leftover half-width centered one.
+  const splitTile = viewer.locator("#main-stage .tile.split-tile");
+  await splitTile.hover();
+  await splitTile.locator(".split-btn").click();
+  await viewer.waitForTimeout(200);
+  state = await viewer.evaluate(() => ({
+    mainStageHasSplit: document.getElementById("main-stage").classList.contains("split"),
+    tileCount: document.querySelectorAll("#main-stage .tile").length,
+  }));
+  assert(!state.mainStageHasSplit, "#main-stage should lose the split class on exit");
+  assert(state.tileCount === 1, `expected exactly 1 tile in #main-stage after exiting split, got ${state.tileCount}`);
+  console.log("Split view audio-swap + clean exit: PASS");
+
   // --- Cycle hotkeys (arrow keys) ---
-  // tabB is hot; tabOrder is [tabB, tabA] after the reorder above, so
-  // ArrowRight should move audio focus to tabA, and a second ArrowRight
-  // should wrap back around to tabB.
+  // Force a known baseline (tabB hot) rather than relying on exactly what
+  // state the split-view block above left things in. tabOrder is
+  // [tabB, tabA] after the earlier reorder, so ArrowRight should move
+  // audio focus to tabA, and a second ArrowRight should wrap back to tabB.
+  await viewer.evaluate((id) => window.promoteToHot(id), tabBId);
+  await viewer.waitForTimeout(200);
   await viewer.evaluate(() => document.activeElement?.blur());
   await viewer.keyboard.press("ArrowRight");
   await viewer.waitForTimeout(200);
