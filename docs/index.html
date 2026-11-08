@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Multiwatch — Privacy Policy</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        padding: 32px 20px 64px;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.6;
+        max-width: 680px;
+        margin-inline: auto;
+        background: #fff;
+        color: #1a1a1a;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111;
+          color: #eee;
+        }
+        a {
+          color: #7ab8ff;
+        }
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin-bottom: 0.25em;
+      }
+      .updated {
+        color: #888;
+        font-size: 0.9rem;
+        margin-bottom: 2em;
+      }
+      h2 {
+        font-size: 1.1rem;
+        margin-top: 1.8em;
+      }
+      ul {
+        padding-left: 1.4em;
+      }
+      li {
+        margin-bottom: 0.5em;
+      }
+      .contact {
+        margin-top: 2em;
+        padding-top: 1em;
+        border-top: 1px solid rgba(128, 128, 128, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Multiwatch — Privacy Policy</h1>
+    <p class="updated">Last updated: November 8, 2026</p>
+
+    <p>
+      Multiwatch is a Chrome extension for watching several video tabs at
+      once. It does not collect, store, transmit, or share any personal
+      data, browsing history, or any other information.
+    </p>
+
+    <h2>What the extension does</h2>
+    <ul>
+      <li>
+        It only interacts with tabs you explicitly choose to track, by
+        clicking its toolbar icon or using the "Track this tab in
+        Multiwatch" right-click menu item on that tab.
+      </li>
+      <li>
+        The list of tabs you're tracking, and which one currently has
+        audio, is stored locally in Chrome's session storage
+        (<code>chrome.storage.session</code>). This data never leaves your
+        browser, is never synced to any account or server, and is cleared
+        automatically when you close your browser.
+      </li>
+      <li>
+        Multiwatch makes <strong>no network requests of any kind</strong>.
+        It does not call any external server, API, or analytics service.
+        Nothing is ever sent anywhere.
+      </li>
+    </ul>
+
+    <h2>Permissions</h2>
+    <p>
+      The permissions Multiwatch requests (<code>tabs</code>,
+      <code>tabCapture</code>, <code>activeTab</code>, <code>storage</code>,
+      <code>contextMenus</code>, <code>scripting</code>) are used solely to
+      capture and display video from tabs you explicitly track, and to
+      manage those specific tabs (e.g. pausing a tracked tab's video, or
+      preventing Chrome from discarding it in the background). None of
+      these permissions are used to read, collect, or transmit your data
+      anywhere.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>
+      If this policy ever changes, the update will be posted on this page
+      with a revised "Last updated" date.
+    </p>
+
+    <p class="contact">
+      Questions? Contact <a href="mailto:azhu625@gmail.com">azhu625@gmail.com</a>.
+    </p>
+  </body>
+</html>

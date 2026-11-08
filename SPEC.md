@@ -3,7 +3,7 @@
 ## 1. What this is
 
 A browser-based control surface that lets you watch several live video streams
-(primarily NFL games on pirate stream sites like buffstreams) at once:
+(e.g. sports broadcasts or livestreams) at once:
 
 - One **main feed** with audio.
 - N **thumbnail feeds** below it, muted, updating live.
@@ -31,7 +31,7 @@ work is in the ad detector project, not here.** Once a stream exposes a
 (per-network model generalization, false positives, latency) already live in
 that sub-project.
 
-**The one genuine risk to the whole plan is ingestion**, not the UI: pirate
+**The one genuine risk to the whole plan is ingestion**, not the UI: many
 streaming sites are not built to be embedded, scraped, or frame-captured
 by a third party. That risk is discussed in detail in §4 and drives most of
 the architecture below.
@@ -39,13 +39,13 @@ the architecture below.
 ## 3. Why this can't be "just an iframe grid"
 
 The naive design — a single web page with N `<iframe>`s or `<video>` tags
-pointed at each stream — will not work reliably against sites like
-buffstreams, for a few concrete reasons:
+pointed at each stream — will not work reliably against many streaming
+sites, for a few concrete reasons:
 
 1. **Frame-busting / `X-Frame-Options` / CSP `frame-ancestors`.** Many
-   streaming (and especially ad-supported pirate streaming) sites block
-   being embedded in an iframe on another origin. Even where the video
-   player itself isn't blocked, the surrounding page usually is.
+   streaming (especially ad-supported) sites block being embedded in an
+   iframe on another origin. Even where the video player itself isn't
+   blocked, the surrounding page usually is.
 2. **Popunders / redirect ads.** These sites monetize via aggressive
    pop-unders, redirect ads, and fake "play" buttons layered over the real
    player. An iframe embed inherits all of that inside your app, and much of
@@ -240,9 +240,8 @@ a small SPA, talking to a Python detector backend you're already building.
 
 **Phase 4 — Hardening**
 - Popunder/ad-network suppression rules, tab-crash/reload recovery,
-  per-site adapters if buffstreams-style sites vary in DOM/player
-  structure enough to need per-site tweaks for frame capture or mute
-  control.
+  per-site adapters if a given streaming site's DOM/player structure
+  needs tweaks for frame capture or mute control.
 
 ## 8. Bottom line
 
