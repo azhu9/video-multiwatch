@@ -272,3 +272,30 @@ tiles will sit on "Connecting…" and the service worker/viewer console will
 show the same `tabCapture failed` error as before — in that case, clicking
 the "Connecting…" overlay manually retries with a real click, which should
 still work as a fallback.
+
+## Publishing to the Chrome Web Store
+
+Icons (`icons/icon{16,32,48,128}.png`) and `manifest.json`'s `icons`/
+`action.default_icon` entries exist specifically for this — a Web Store
+listing requires at least the 128px icon, and there were none before this
+pass. The permission list (`tabs`, `tabCapture`, `activeTab`, `storage`,
+`contextMenus`, `scripting`) is deliberately minimal — no `host_permissions`
+at all, since every capability (capture, script injection, etc.) only ever
+acts on a tab the user explicitly invoked the extension on. That's worth
+keeping true going forward: it's both the right design and makes store
+review meaningfully less friction-prone.
+
+**The submission package should contain only the runtime files** —
+`manifest.json`, `background.js`, `viewer.html`, `viewer.css`, `viewer.js`,
+`icons/` — not `README.md`, `SPEC.md`, `test/`, or `package.json`. None of
+those are needed for the extension to run, and `SPEC.md` in particular
+names the pirate-streaming use case that motivated this project explicitly
+(by design — it's an honest feasibility writeup, not something written for
+a public audience). That's fine for a private dev repo; it's not something
+that should end up in a Web Store submission or be the text a reviewer
+reads if this repo's URL is ever listed as the extension's homepage/support
+link. Scrub or drop that context before making the repo public, if that's
+ever the plan — the extension's actual code is fully generic (it works with
+any site that has a `<video>` element, Twitch and YouTube included) and
+doesn't need to be described in terms of any particular source site in the
+store listing copy either.

@@ -9,7 +9,7 @@ const HOT_CONSTRAINTS = { width: 1280, height: 720, frameRate: 30 };
 // Thumbnails default to "low" to keep concurrent-decode load down — running
 // several background captures at once is genuinely CPU/GPU-heavy, and on
 // weaker devices that's the most likely cause of A/V drift (see
-// resyncMainVideo() below). Higher presets are an explicit opt-in since they
+// resyncVideo() below). Higher presets are an explicit opt-in since they
 // make that contention worse, not better.
 const COLD_PRESETS = {
   low: { width: 320, height: 180, frameRate: 8 },
